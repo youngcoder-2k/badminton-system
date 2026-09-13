@@ -353,3 +353,17 @@ export interface ChatMessage {
   mentions?: string[]; // Danh sách userId hoặc userName được tag
 }
 
+// Ngày nghỉ lễ trung tâm (Holiday / Center Closure)
+export interface CenterHoliday {
+  id: string;
+  date?: string; // 'YYYY-MM-DD' (tương thích ngược)
+  startDate: string; // 'YYYY-MM-DD' - Ngày bắt đầu nghỉ
+  endDate?: string; // 'YYYY-MM-DD' - Ngày kết thúc nghỉ (dành cho dịp nghỉ nhiều ngày)
+  name: string; // e.g. 'Nghỉ lễ Quốc Khánh 2/9'
+  facilityId: string; // 'ALL' hoặc id cơ sở cụ thể
+  facilityName: string; // 'Toàn hệ thống' hoặc tên cơ sở
+  note?: string;
+  createdAt: string;
+  createdBy: string;
+  affectedStudentsCount: number;
+}

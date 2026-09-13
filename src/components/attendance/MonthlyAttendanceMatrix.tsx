@@ -1,17 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import {
   Calendar,
-  ChevronLeft,
-  ChevronRight,
   Download,
-  Filter,
-  Search,
-  CheckCircle2,
-  Clock,
-  Sparkles,
-  Users,
-  Building2,
-  AlertCircle
+  Search
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { AttendanceStatus } from '../../types';
@@ -22,7 +13,6 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
     facilities,
     shifts,
     sessions,
-    saveAttendance,
     showToast,
     currentUser,
     isCoach,
@@ -33,11 +23,7 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState('2026-08');
   const [selectedFacility, setSelectedFacility] = useState('ALL');
   const [selectedShift, setSelectedShift] = useState('ALL');
-  const [selectedScheduleStatus, setSelectedScheduleStatus] = useState<'ALL' | 'confirmed' | 'pending_admin'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-
-  // Local overrides for matrix cell attendance: { `${studentId}_${dateStr}`: AttendanceStatus }
-  const [localAttendance, setLocalAttendance] = useState<Record<string, AttendanceStatus>>({});
 
   // Parse Year and Month number
   const [year, monthNum] = useMemo(() => {
@@ -76,7 +62,8 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
       const matchesSearch =
         student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         student.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        student.phone.includes(searchQuery);
+        student.phone.includes(searchQuery) ||
+        Boolean(student.className && student.className.toLowerCase().includes(searchQuery.toLowerCase()));
 
       const matchesFacility =
         currentUser.role === 'FACILITY_MANAGER'
@@ -90,14 +77,9 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
         student.shiftId === selectedShift ||
         student.fixedShiftId === selectedShift;
 
-      const matchesScheduleStatus =
-        selectedScheduleStatus === 'ALL' ||
-        (selectedScheduleStatus === 'pending_admin' && student.scheduleStatus === 'pending_admin') ||
-        (selectedScheduleStatus === 'confirmed' && student.scheduleStatus !== 'pending_admin');
-
-      return matchesSearch && matchesFacility && matchesShift && matchesScheduleStatus;
+      return matchesSearch && matchesFacility && matchesShift;
     });
-  }, [baseStudents, searchQuery, selectedFacility, selectedShift, selectedScheduleStatus, facilities, currentUser]);
+  }, [baseStudents, searchQuery, selectedFacility, selectedShift, facilities, currentUser]);
 
   // Compute "TỔNG ĐĂNG KÝ THEO NGÀY" (Count students scheduled on each day of month)
   const dayRegistrationCounts = useMemo(() => {
@@ -111,70 +93,20 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
 
   // Lookup attendance status for a student on a specific date
   const getAttendanceForStudentDate = (studentId: string, dateStr: string): AttendanceStatus | 'Scheduled' | 'None' => {
-    // 1. Check local unsaved toggle
-    const localKey = `${studentId}_${dateStr}`;
-    if (localAttendance[localKey]) {
-      return localAttendance[localKey];
-    }
-
-    // 2. Check existing sessions
+    // 1. Check existing sessions
     const matchedSession = sessions.find(s => s.date === dateStr);
     if (matchedSession?.attendanceRecords) {
       const record = matchedSession.attendanceRecords.find(r => r.studentId === studentId);
       if (record) return record.status;
     }
 
-    // 3. If student has this specific date registered
+    // 2. If student has this specific date registered
     const student = students.find(s => s.id === studentId);
     if (student?.specificDates?.includes(dateStr)) {
       return 'Scheduled';
     }
 
     return 'None';
-  };
-
-  // Toggle attendance cell on click
-  const handleCellClick = (studentId: string, studentName: string, dateStr: string) => {
-    const current = getAttendanceForStudentDate(studentId, dateStr);
-    const localKey = `${studentId}_${dateStr}`;
-
-    const student = students.find(s => s.id === studentId);
-    const maxLeaves = student ? (student.allowedLeaves ?? Math.floor((student.packageSessions || 12) / 4)) : 3;
-    const isOutOfLeaves = student ? (student.usedLeaves || 0) >= maxLeaves : false;
-
-    let nextStatus: AttendanceStatus;
-    if (current === 'Scheduled' || current === 'None') {
-      nextStatus = 'Present';
-    } else if (current === 'Present') {
-      // RULE: nếu hết phép thì chỉ có thể chuyển thành vắng, không thể chuyển sang có phép được
-      if (isOutOfLeaves) {
-        nextStatus = 'Absent';
-        showToast(
-          `Học viên ${studentName} đã hết phép tháng (${student?.usedLeaves || 0}/${maxLeaves} phép). Chỉ có thể chuyển sang VẮNG!`,
-          'warning'
-        );
-      } else {
-        nextStatus = 'Excused';
-      }
-    } else if (current === 'Excused') {
-      nextStatus = 'Absent';
-    } else {
-      nextStatus = 'Present';
-    }
-
-    setLocalAttendance(prev => ({
-      ...prev,
-      [localKey]: nextStatus
-    }));
-
-    const statusLabels: Record<AttendanceStatus, string> = {
-      Present: 'Có mặt (✓)',
-      Excused: 'Nghỉ có phép (P)',
-      Absent: 'Vắng không phép (K)'
-    };
-    if (!isOutOfLeaves || current !== 'Present') {
-      showToast(`${studentName} [${dateStr.split('-').reverse().join('/')}]: ${statusLabels[nextStatus]}`, 'info');
-    }
   };
 
   // Export Matrix to CSV
@@ -186,7 +118,6 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
       'Sân Cầu Lông',
       'Ca Học',
       'Tổng Ngày Đăng Ký',
-      'Trạng Thái Lịch',
       ...daysInMonth.map(d => `${d.day}/${monthNum} (${d.dayOfWeek})`)
     ];
 
@@ -207,7 +138,6 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
         `"${st.facilityName || 'Sân Cầu Giấy'}"`,
         `"${st.shiftName || 'Ca 4'}"`,
         st.specificDates?.length || st.packageSessions || 12,
-        st.scheduleStatus === 'pending_admin' ? 'Chờ Admin lưu lịch' : 'Đã duyệt & lưu lịch',
         ...dayValues
       ].join(',');
     });
@@ -217,7 +147,6 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
       '',
       '',
       '"TỔNG ĐĂNG KÝ HỌC THEO NGÀY"',
-      '',
       '',
       '',
       '',
@@ -242,15 +171,15 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
       <div className="p-5 bg-white rounded-3xl border border-slate-100 shadow-xs space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 mb-1.5">
-              <Calendar className="w-3.5 h-3.5 text-[#10B981]" />
-              <span>Ma Trận 31 Ngày Theo Ngày Học Cụ Thể Trong Tháng</span>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-bold border border-slate-200 mb-1.5">
+              <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Chế Độ Hiển Thị Thông Tin — Ma Trận 31 Ngày</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-extrabold text-[#0F172A] tracking-tight">
               Bảng Điểm Danh Lưới Tháng (Ma Trận 31 Ngày)
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Tự động đồng bộ các ngày học viên đăng ký cụ thể đã được Admin lưu lịch — Khớp 100% định dạng bảng tính Excel tại sân
+              Hiển thị tổng hợp lịch học và kết quả điểm danh 31 ngày trong tháng — Không chỉnh sửa trực tiếp trên ma trận
             </p>
           </div>
 
@@ -309,18 +238,7 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
               ))}
             </select>
 
-            {/* Trạng thái duyệt lịch - Chỉ Admin */}
-            {currentUser.role === 'ADMIN' && (
-              <select
-                value={selectedScheduleStatus}
-                onChange={e => setSelectedScheduleStatus(e.target.value as any)}
-                className="px-3 py-1.5 bg-slate-50 text-xs font-bold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer"
-              >
-                <option value="ALL">Tất cả trạng thái lịch</option>
-                <option value="confirmed">Đã Admin lưu lịch (✓)</option>
-                <option value="pending_admin">Chờ Admin lưu lịch (⏳)</option>
-              </select>
-            )}
+
           </div>
 
           <div className="relative w-full sm:w-64">
@@ -346,17 +264,11 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
                 <th className="sticky left-0 z-20 bg-slate-900 py-3 px-3 text-left font-extrabold w-12 border-r border-slate-800">
                   STT
                 </th>
-                <th className="sticky left-12 z-20 bg-slate-900 py-3 px-4 text-left font-extrabold min-w-[190px] border-r border-slate-800">
-                  Học viên & Lớp
+                <th className="sticky left-12 z-20 bg-slate-900 py-3 px-4 text-left font-extrabold min-w-[170px] border-r border-slate-800">
+                  Học viên
                 </th>
                 <th className="py-3 px-2 text-center font-extrabold min-w-[110px] border-r border-slate-800">
                   Sân Cầu Lông
-                </th>
-                <th className="py-3 px-2 text-center font-extrabold min-w-[80px] border-r border-slate-800">
-                  Ca học
-                </th>
-                <th className="py-3 px-2 text-center font-extrabold min-w-[70px] border-r border-slate-800">
-                  Đã chọn
                 </th>
 
                 {/* 31 Columns */}
@@ -399,12 +311,6 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
                 <td className="py-2.5 px-2 text-center text-[11px] text-emerald-800 border-r border-emerald-200">
                   {filteredStudents.length} HV lọc
                 </td>
-                <td className="py-2.5 px-2 text-center text-[11px] text-emerald-800 border-r border-emerald-200">
-                  —
-                </td>
-                <td className="py-2.5 px-2 text-center text-xs font-black text-emerald-900 border-r border-emerald-200">
-                  {filteredStudents.reduce((acc, s) => acc + (s.specificDates?.length || s.packageSessions || 12), 0)}
-                </td>
 
                 {/* Day Counts */}
                 {daysInMonth.map(d => {
@@ -442,20 +348,16 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={daysInMonth.length + 8} className="py-12 text-center text-slate-400">
+                  <td colSpan={daysInMonth.length + 6} className="py-12 text-center text-slate-400">
                     Không tìm thấy học viên nào phù hợp bộ lọc.
                   </td>
                 </tr>
               ) : (
                 filteredStudents.map((st, idx) => {
-                  const isPending = st.scheduleStatus === 'pending_admin';
-
                   return (
                     <tr
                       key={st.id}
-                      className={`hover:bg-slate-50/70 transition-colors ${
-                        isPending ? 'bg-amber-50/30' : ''
-                      }`}
+                      className="hover:bg-slate-50/70 transition-colors"
                     >
                       {/* STT */}
                       <td className="sticky left-0 z-10 bg-white group-hover:bg-slate-50 py-2.5 px-3 text-center text-slate-400 font-semibold border-r border-slate-100">
@@ -471,18 +373,8 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
                             className="w-7 h-7 rounded-full object-cover shrink-0 border border-slate-200"
                           />
                           <div className="min-w-0">
-                            <div className="font-extrabold text-[#0F172A] truncate flex items-center gap-1.5">
+                            <div className="font-extrabold text-[#0F172A] truncate">
                               <span>{st.name}</span>
-                              {isPending && (
-                                <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
-                                  Chờ duyệt
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
-                              <span className="font-bold text-slate-600">{st.code}</span>
-                              <span>•</span>
-                              <span className="truncate">{st.className}</span>
                             </div>
                           </div>
                         </div>
@@ -493,16 +385,6 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
                         {st.facilityName || 'Sân Cầu Giấy'}
                       </td>
 
-                      {/* Ca Học */}
-                      <td className="py-2.5 px-2 text-center text-[11px] font-bold text-[#10B981] border-r border-slate-100">
-                        {st.shiftName?.split(' ')[0] || 'Ca 4'}
-                      </td>
-
-                      {/* Đã chọn */}
-                      <td className="py-2.5 px-2 text-center text-xs font-black text-slate-800 border-r border-slate-100">
-                        {st.specificDates?.length || st.packageSessions || 12}
-                      </td>
-
                       {/* 31 Date Cells */}
                       {daysInMonth.map(d => {
                         const status = getAttendanceForStudentDate(st.id, d.dateStr);
@@ -511,8 +393,7 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
                         return (
                           <td
                             key={d.day}
-                            onClick={() => handleCellClick(st.id, st.name, d.dateStr)}
-                            className={`py-1.5 px-0.5 text-center border-r border-slate-100 transition-all select-none cursor-pointer ${
+                            className={`py-1.5 px-0.5 text-center border-r border-slate-100 select-none cursor-default ${
                               d.isToday ? 'bg-emerald-50/40' : ''
                             } ${
                               status === 'Present'
@@ -521,21 +402,17 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
                                 ? 'bg-amber-100/90 text-amber-900 font-black'
                                 : status === 'Absent'
                                 ? 'bg-rose-100/90 text-rose-800 font-black'
-                                : isScheduled
-                                ? 'hover:bg-emerald-50'
-                                : 'hover:bg-slate-100/60'
+                                : ''
                             }`}
                             title={`${st.name} — Ngày ${d.day}/${monthNum}: ${
                               status === 'Present'
-                                ? 'Có mặt'
+                                ? 'Có mặt (✓)'
                                 : status === 'Excused'
-                                ? 'Nghỉ phép'
+                                ? 'Nghỉ có phép (P)'
                                 : status === 'Absent'
-                                ? 'Vắng'
+                                ? 'Vắng không phép (K)'
                                 : isScheduled
-                                ? isPending
-                                  ? 'Đã chọn ngày (Chờ Admin duyệt)'
-                                  : 'Lịch học đã lưu (Click để đổi điểm danh)'
+                                ? 'Lịch học'
                                 : 'Không có lịch'
                             }`}
                           >
@@ -550,13 +427,7 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
                                 <span className="text-xs font-black text-rose-700">K</span>
                               )}
                               {status === 'Scheduled' && (
-                                <span
-                                  className={`w-2.5 h-2.5 rounded-full ${
-                                    isPending
-                                      ? 'bg-amber-400 border border-amber-500'
-                                      : 'bg-[#10B981] shadow-2xs'
-                                  }`}
-                                ></span>
+                                <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] shadow-2xs"></span>
                               )}
                               {status === 'None' && !isScheduled && (
                                 <span className="text-slate-200 text-[10px]">·</span>
@@ -608,16 +479,13 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-[#10B981]"></span>
-              <span>Lịch học đã được Admin lưu</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-amber-500"></span>
-              <span>Chờ Admin duyệt lịch</span>
+              <span>Lịch học</span>
             </div>
           </div>
 
-          <div className="text-slate-400 text-[11px] italic">
-            💡 Mẹo: Nhấp chuột vào bất kỳ ô ngày nào để chuyển đổi nhanh trạng thái: Có mặt → Phép (nếu còn phép) → Vắng.
+          <div className="text-slate-500 text-[11px] font-medium flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+            <span>Chế độ chỉ hiển thị thông tin. Thao tác điểm danh được thực hiện tại ca học trong ngày.</span>
           </div>
         </div>
       </div>

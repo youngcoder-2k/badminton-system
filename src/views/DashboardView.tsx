@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   BookOpen,
   UserCheck,
@@ -14,7 +14,8 @@ import {
   DollarSign,
   Activity,
   Flame,
-  CheckSquare
+  CheckSquare,
+  CalendarPlus
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SessionStatusBadge } from '../components/common/Badge';
@@ -27,10 +28,10 @@ export const DashboardView: React.FC = () => {
     students,
     coaches,
     sessions,
+    shifts,
     navigate,
     setAttendanceTarget,
-    facilities,
-    pendingScheduleCount
+    facilities
   } = useApp();
 
   // Admin KPIs
@@ -43,6 +44,38 @@ export const DashboardView: React.FC = () => {
   const todayStr = '2026-08-28';
   const todayDateFormatted = 'Thứ Sáu, 28 Tháng 08, 2026';
 
+  // Hàm chuẩn hóa tên cơ sở
+  const getDisplayFacilityName = (facilityName?: string, facilityId?: string) => {
+    let raw = facilityName;
+    if (!raw && facilityId) {
+      raw = facilities.find(f => f.id === facilityId)?.name;
+    }
+    if (!raw) return 'Cơ sở Cầu Giấy';
+    const clean = raw
+      .replace(/^Sân\s+(cầu\s+lông\s+|Cầu\s+Lông\s+)?/i, '')
+      .replace(/^Cơ\s+sở\s+(\d+\s*-\s*)?/i, '')
+      .trim();
+    return clean ? `Cơ sở ${clean}` : raw;
+  };
+
+  // Hàm chuẩn hóa tên ca học
+  const getDisplayShiftName = (session: typeof sessions[0]) => {
+    if (session.shiftId) {
+      const sh = shifts.find(s => s.id === session.shiftId);
+      if (sh) return sh.name;
+    }
+    const matched = shifts.find(
+      s => s.startTime === session.startTime || s.timeSlot === session.timeSlot
+    );
+    if (matched) return matched.name;
+
+    if (session.startTime === '18:00') return 'Ca 1';
+    if (session.startTime === '19:30') return 'Ca 2';
+    if (session.startTime === '06:00' || session.startTime === '08:00') return 'Ca sáng';
+
+    return `Ca ${session.startTime} - ${session.endTime}`;
+  };
+
   // Today's sessions:
   // - Quản lý sân: Chỉ xem các ca tại sân của mình
   // - Admin: Xem toàn bộ ca trong ngày
@@ -53,6 +86,57 @@ export const DashboardView: React.FC = () => {
     }
     return true;
   });
+
+  // Danh sách các ca học diễn ra trong ngày theo Cơ sở và Ca học
+  const todayFacilityShifts = useMemo(() => {
+    const map = new Map<string, {
+      id: string;
+      facilityId: string;
+      facilityName: string;
+      shiftId: string;
+      shiftName: string;
+      startTime: string;
+      endTime: string;
+      timeSlot: string;
+      classId: string;
+      sessionId: string;
+      attendanceDone: boolean;
+    }>();
+
+    todaySessions.forEach(session => {
+      const facilityId = session.facilityId || 'CS01';
+      const facilityName = getDisplayFacilityName(session.facilityName, facilityId);
+      const shiftName = getDisplayShiftName(session);
+      const shiftId = session.shiftId || shiftName;
+
+      const groupKey = `${facilityId}_${shiftId}`;
+      if (!map.has(groupKey)) {
+        map.set(groupKey, {
+          id: session.id,
+          facilityId,
+          facilityName,
+          shiftId,
+          shiftName,
+          startTime: session.startTime,
+          endTime: session.endTime,
+          timeSlot: session.timeSlot || `${session.startTime} - ${session.endTime}`,
+          classId: session.classId,
+          sessionId: session.id,
+          attendanceDone: Boolean(session.attendanceDone)
+        });
+      } else {
+        const item = map.get(groupKey)!;
+        if (!session.attendanceDone) {
+          item.attendanceDone = false;
+        }
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.startTime !== b.startTime) return a.startTime.localeCompare(b.startTime);
+      return a.facilityName.localeCompare(b.facilityName);
+    });
+  }, [todaySessions, facilities, shifts]);
 
   // Coach-specific stats (HLV chỉ nhìn ca của mình)
   const coachClasses = classes.filter(c => c.coachId === currentUser.coachId);
@@ -65,14 +149,8 @@ export const DashboardView: React.FC = () => {
   );
   const currentCoachData = coaches.find(c => c.id === currentUser.coachId);
 
-  // Alerts calculation
-  const unpaidStudents = students.filter(s => s.paymentStatus === 'Unpaid' || s.paymentStatus === 'Overdue');
-  const warningSessionsStudents = students.filter(s => s.remainingSessions <= 2 && s.remainingSessions > 0);
-  const expiredSessionsStudents = students.filter(s => s.remainingSessions === 0);
-  const uncompletedTodaySessions = todaySessions.filter(s => !s.attendanceDone);
-
-  const handleStartAttendance = (classId: string, sessionId: string) => {
-    setAttendanceTarget({ classId, date: todayStr, sessionId });
+  const handleStartAttendance = (classId: string, sessionId: string, facilityId?: string) => {
+    setAttendanceTarget({ classId, date: todayStr, sessionId, facilityId });
     navigate('attendance');
   };
 
@@ -103,20 +181,26 @@ export const DashboardView: React.FC = () => {
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
+            <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
+              {/* Nút Đăng Ký Ca Dạy Hàng Ngày - Thiết kế Nổi Bật Tuyệt Đối Cho HLV */}
               <button
-                onClick={() => navigate('schedule')}
-                className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-900/90 hover:bg-slate-900 text-[#A3E635] font-bold text-sm border border-emerald-500/30 shadow-md transition-all cursor-pointer"
+                onClick={() => navigate('schedule', 'register-coach-session')}
+                className="inline-flex items-center justify-center gap-2.5 px-5 py-3.5 rounded-2xl bg-gradient-to-r from-amber-300 via-[#A3E635] to-emerald-400 hover:from-amber-200 hover:via-[#84cc16] hover:to-emerald-300 text-slate-950 font-black text-sm shadow-xl shadow-lime-500/30 ring-4 ring-lime-400/50 hover:scale-[1.03] active:scale-[0.98] transition-all cursor-pointer group"
+                title="Đăng ký ca dạy hàng ngày cho huấn luyện viên"
               >
-                <Clock className="w-4 h-4" />
-                <span>Đăng Ký Ca Dạy (≥ 3h)</span>
+                <CalendarPlus className="w-5 h-5 text-slate-950 group-hover:rotate-12 transition-transform" />
+                <span>ĐĂNG KÝ CA DẠY HÀNG NGÀY</span>
+                <span className="px-2 py-0.5 rounded-full bg-slate-950/15 text-slate-950 text-[10px] font-black uppercase tracking-wider">
+                  Ưu tiên
+                </span>
               </button>
+
               <button
                 onClick={() => navigate('attendance')}
-                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[#10B981] hover:bg-emerald-400 text-white font-bold text-sm shadow-md shadow-emerald-900/30 transition-all cursor-pointer"
+                className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 text-white font-bold text-sm border border-emerald-500/30 shadow-md transition-all cursor-pointer"
               >
-                <CheckSquare className="w-4 h-4" />
-                <span>Điểm Danh Ngay Tại Sân</span>
+                <CheckSquare className="w-4 h-4 text-emerald-400" />
+                <span>Điểm Danh Tại Sân</span>
               </button>
             </div>
           </div>
@@ -137,29 +221,31 @@ export const DashboardView: React.FC = () => {
 
           <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-xs hover:border-emerald-200 transition-colors">
             <div className="flex items-center justify-between text-slate-500 mb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Lớp phụ trách</span>
-              <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
-                <BookOpen className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="text-2xl sm:text-3xl font-bold text-[#0F172A]">{coachClasses.length}</div>
-            <div className="text-xs text-slate-400 mt-1">Lớp đang giảng dạy</div>
-          </div>
-
-          <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-xs hover:border-emerald-200 transition-colors">
-            <div className="flex items-center justify-between text-slate-500 mb-2">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Học viên</span>
-              <div className="p-2 rounded-lg bg-lime-50 text-lime-700">
+              <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
                 <Users className="w-4 h-4" />
               </div>
             </div>
             <div className="text-2xl sm:text-3xl font-bold text-[#0F172A]">{coachStudents.length}</div>
-            <div className="text-xs text-slate-400 mt-1">Đang theo học các lớp của bạn</div>
+            <div className="text-xs text-slate-400 mt-1">Tổng học viên phụ trách</div>
           </div>
 
           <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-xs hover:border-emerald-200 transition-colors">
             <div className="flex items-center justify-between text-slate-500 mb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Buổi tháng này</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Đã điểm danh</span>
+              <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
+                <CheckCircle2 className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-2xl sm:text-3xl font-bold text-[#0F172A]">
+              {coachTodaySessions.filter(s => s.attendanceDone).length}/{coachTodaySessions.length}
+            </div>
+            <div className="text-xs text-slate-400 mt-1">Tiến độ hôm nay</div>
+          </div>
+
+          <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-xs hover:border-emerald-200 transition-colors">
+            <div className="flex items-center justify-between text-slate-500 mb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Số buổi tháng này</span>
               <div className="p-2 rounded-lg bg-orange-50 text-orange-600">
                 <Activity className="w-4 h-4" />
               </div>
@@ -173,118 +259,93 @@ export const DashboardView: React.FC = () => {
           </div>
         </div>
 
-        {/* Coach Today Sessions List */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-100 shadow-xs p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-50 pb-4">
-              <div>
-                <h2 className="text-lg font-bold text-[#0F172A]">Lịch Dạy Hôm Nay</h2>
-                <p className="text-xs text-slate-500">Các ca tập cần huấn luyện và điểm danh</p>
-              </div>
-              <span className="text-xs font-bold px-3 py-1 bg-slate-100 text-slate-700 rounded-full">
-                {coachTodaySessions.length} ca học
-              </span>
+        {/* Khối Banner Nhắc Nhở & Đăng Ký Ca Dạy Nổi Bật Dành Riêng Cho HLV */}
+        <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-100/60 rounded-3xl border-2 border-emerald-300/80 p-5 sm:p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-500/25">
+              <CalendarPlus className="w-6 h-6" />
             </div>
-
-            <div className="space-y-3">
-              {coachTodaySessions.length === 0 ? (
-                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-100 text-slate-400 text-sm">
-                  Hôm nay bạn không có ca dạy nào theo lịch.
-                </div>
-              ) : (
-                coachTodaySessions.map(session => (
-                  <div
-                    key={session.id}
-                    className="p-4 bg-slate-50 hover:bg-emerald-50/40 rounded-2xl border border-slate-100 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-20 text-center font-bold text-slate-700 shrink-0">
-                        <div className="text-sm">{session.startTime}</div>
-                        <div className="text-[11px] text-slate-400">{session.endTime}</div>
-                      </div>
-
-                      <div className="w-[3px] h-10 bg-[#10B981] mx-2 rounded-full shrink-0" />
-
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="text-sm font-bold text-[#0F172A]">{session.className}</h3>
-                        </div>
-                        <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
-                          <span className="font-medium text-slate-700">🏟️ {session.court}</span>
-                          <span>•</span>
-                          <span>👥 {session.totalStudents} học viên</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-                      {session.attendanceDone ? (
-                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" />
-                          <span>{session.attendedByRole === 'COACH' ? 'GV đã điểm danh' : 'Đã điểm danh'}</span>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => handleStartAttendance(session.classId, session.id)}
-                          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#10B981] hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
-                        >
-                          <CheckSquare className="w-3.5 h-3.5" />
-                          <span>Điểm danh</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base sm:text-lg font-black text-[#0F172A]">
+                  Đăng Ký Lịch Dạy Hàng Ngày
+                </h3>
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-extrabold uppercase tracking-wide shadow-2xs">
+                  Thao tác hàng ngày
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                Huấn luyện viên vui lòng chủ động đăng ký ngày dạy mỗi ngày để Ban Quản Trị kịp thời phân công sân và ca dạy thích hợp.
+              </p>
             </div>
           </div>
+          <button
+            onClick={() => navigate('schedule', 'register-coach-session')}
+            className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs sm:text-sm rounded-2xl shadow-md shadow-emerald-600/30 ring-2 ring-emerald-400/40 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer whitespace-nowrap self-start sm:self-auto shrink-0 group"
+          >
+            <CalendarPlus className="w-4.5 h-4.5 group-hover:rotate-12 transition-transform" />
+            <span>Mở Đăng Ký Ca Dạy</span>
+            <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+          </button>
+        </div>
 
-          {/* Coach Quick Student Alerts */}
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-xs p-6 space-y-4">
-            <div className="border-b border-slate-50 pb-4">
-              <h2 className="text-lg font-bold text-[#0F172A]">Học Viên Cần Lưu Ý</h2>
-              <p className="text-xs text-slate-500">Học viên sắp hết số buổi trong lớp bạn</p>
+        {/* Coach Today Sessions List */}
+        <div className="bg-white rounded-3xl border border-slate-100 shadow-xs p-6 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-50 pb-4">
+            <div>
+              <h2 className="text-lg font-bold text-[#0F172A]">Lịch Dạy Hôm Nay</h2>
+              <p className="text-xs text-slate-500">Các ca tập cần huấn luyện và điểm danh</p>
             </div>
+            <span className="text-xs font-bold px-3 py-1 bg-slate-100 text-slate-700 rounded-full">
+              {coachTodaySessions.length} ca học
+            </span>
+          </div>
 
-            <div className="space-y-3">
-              {coachStudents.filter(s => s.remainingSessions <= 2).length === 0 ? (
-                <div className="text-center py-6 text-xs text-slate-400">
-                  Tất cả học viên trong lớp đều còn nhiều buổi học
-                </div>
-              ) : (
-                coachStudents
-                  .filter(s => s.remainingSessions <= 2)
-                  .map(student => (
-                    <div
-                      key={student.id}
-                      onClick={() => navigate('students', student.id)}
-                      className="p-3 bg-amber-50/70 rounded-2xl border border-amber-200/80 flex items-center justify-between cursor-pointer hover:bg-amber-100/60 transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <img
-                          src={student.avatar}
-                          alt={student.name}
-                          className="w-9 h-9 rounded-full object-cover border border-amber-300"
-                        />
-                        <div>
-                          <div className="text-xs font-bold text-[#0F172A]">{student.name}</div>
-                          <div className="text-[11px] text-amber-800">
-                            {student.className || 'Chưa xếp lớp'} • {student.remainingSessions === 0 ? 'Đã hết buổi' : `Còn ${student.remainingSessions} buổi`}
-                          </div>
-                        </div>
+          <div className="space-y-3">
+            {coachTodaySessions.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-100 text-slate-400 text-sm">
+                Hôm nay bạn không có ca dạy nào theo lịch.
+              </div>
+            ) : (
+              coachTodaySessions.map(session => (
+                <div
+                  key={session.id}
+                  className="p-4 bg-slate-50 hover:bg-emerald-50/40 rounded-2xl border border-slate-100 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-[3.5px] h-10 bg-[#10B981] rounded-full shrink-0" />
+
+                    <div>
+                      <h3 className="text-sm font-bold text-[#0F172A]">
+                        {getDisplayFacilityName(session.facilityName, session.facilityId)}
+                      </h3>
+                      <div className="mt-1">
+                        <span className="inline-flex items-center text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-md">
+                          {getDisplayShiftName(session)}
+                        </span>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-amber-700" />
                     </div>
-                  ))
-              )}
+                  </div>
 
-              <button
-                onClick={() => navigate('students')}
-                className="w-full py-2.5 text-center text-xs font-bold text-[#10B981] hover:text-emerald-700 block border-t border-slate-100 mt-2 cursor-pointer"
-              >
-                Xem danh sách tất cả học viên ({coachStudents.length}) →
-              </button>
-            </div>
+                  <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                    {session.attendanceDone ? (
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" />
+                        <span>{session.attendedByRole === 'COACH' ? 'GV đã điểm danh' : 'Đã điểm danh'}</span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handleStartAttendance(session.classId, session.id, session.facilityId)}
+                        className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#10B981] hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+                      >
+                        <CheckSquare className="w-3.5 h-3.5" />
+                        <span>Điểm danh</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -398,234 +459,76 @@ export const DashboardView: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Grid: Today's Sessions + Alerts & Highlight Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: BUỔI HỌC HÔM NAY (Geometric Container) */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-xs flex-1 flex flex-col overflow-hidden">
-            <div className="p-6 border-b border-slate-50 flex justify-between items-center">
-              <div>
-                <h3 className="font-bold text-lg text-[#0F172A]">Buổi học hôm nay</h3>
-                <p className="text-xs text-slate-400">Các ca học diễn ra trong ngày tại trung tâm</p>
-              </div>
-              <button
-                onClick={() => navigate('schedule')}
-                className="text-xs text-[#10B981] font-bold hover:underline cursor-pointer"
-              >
-                Xem tất cả lịch tuần →
-              </button>
-            </div>
-
-            <div className="p-6 space-y-3.5">
-              {todaySessions.map((session, idx) => (
-                <div
-                  key={session.id}
-                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 hover:bg-emerald-50/30 rounded-2xl border border-slate-100 transition-all gap-4"
-                >
-                  <div className="flex items-center">
-                    <div className="w-20 text-center font-bold text-slate-700 shrink-0">
-                      <div className="text-sm">{session.startTime}</div>
-                      <div className="text-[11px] text-slate-400">{session.endTime}</div>
-                    </div>
-
-                    <div
-                      className={`w-[3px] h-10 mx-3 rounded-full shrink-0 ${
-                        idx === 0
-                          ? 'bg-[#10B981]'
-                          : idx === 1
-                          ? 'bg-[#A3E635]'
-                          : idx === 2
-                          ? 'bg-sky-400'
-                          : 'bg-slate-300'
-                      }`}
-                    />
-
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4
-                          onClick={() => navigate('classes', session.classId)}
-                          className="font-bold text-sm text-[#0F172A] hover:text-[#10B981] cursor-pointer"
-                        >
-                          {session.className}
-                        </h4>
-                      </div>
-                      <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
-                        <span>👤 HLV: {session.coachName}</span>
-                        <span>•</span>
-                        <span>🏟️ {session.court}</span>
-                        <span>•</span>
-                        <span className="font-semibold text-slate-700">
-                          👥 {session.totalStudents} học viên
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-                    {session.attendanceDone ? (
-                      <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" />
-                        ĐÃ ĐIỂM DANH
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => handleStartAttendance(session.classId, session.id)}
-                        className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#10B981] hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
-                      >
-                        <CheckSquare className="w-3.5 h-3.5" />
-                        <span>Điểm danh</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+      {/* Buổi học hôm nay */}
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-xs flex flex-col overflow-hidden">
+        <div className="p-6 border-b border-slate-50 flex justify-between items-center">
+          <div>
+            <h3 className="font-bold text-lg text-[#0F172A]">Buổi học hôm nay</h3>
+            <p className="text-xs text-slate-400">Các ca học diễn ra trong ngày tại trung tâm</p>
           </div>
-
-          {/* Sân Cầu Lông Trực Thuộc (Courts Grid) - Chỉ hiển thị cho ADMIN */}
-          {currentUser.role === 'ADMIN' && (
-            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-xs">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-bold text-base text-[#0F172A]">Tình trạng sân cầu lông</h3>
-                  <p className="text-xs text-slate-400">Các cơ sở & sân tập trực thuộc hệ thống</p>
-                </div>
-                <button
-                  onClick={() => navigate('facilities')}
-                  className="text-xs text-[#10B981] font-bold hover:underline flex items-center gap-1.5 cursor-pointer"
-                >
-                  Quản lý sân →
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {facilities.map((court) => {
-                  const courtClasses = classes.filter(c => c.facilityId === court.id || c.court === court.name);
-                  return (
-                    <div
-                      key={court.id}
-                      onClick={() => navigate('facilities')}
-                      className="p-3.5 rounded-2xl border bg-slate-50 hover:bg-emerald-50/60 hover:border-emerald-200 border-slate-100 text-slate-700 transition-all cursor-pointer"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs font-bold text-[#0F172A] truncate">{court.name}</div>
-                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                      </div>
-                      <div className="text-[11px] font-bold mt-1 text-[#10B981] truncate">
-                        {courtClasses.length} lớp học tại sân
-                      </div>
-                      <div className="text-[10px] text-slate-400 mt-0.5 truncate">
-                        QL: {court.managerName || 'Nguyễn Văn Thắng'}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          <button
+            onClick={() => navigate('schedule')}
+            className="text-xs text-[#10B981] font-bold hover:underline cursor-pointer"
+          >
+            Xem tất cả lịch tuần →
+          </button>
         </div>
 
-        {/* Right 1 Col: CẢNH BÁO + DARK HIGHLIGHT CARD */}
-        <div className="space-y-6">
-          {/* Cảnh báo quan trọng (Geometric Balance Alert Box) */}
-          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-xs space-y-4">
-            <div>
-              <h3 className="font-bold text-lg text-[#0F172A]">Cảnh báo quan trọng</h3>
-              <p className="text-xs text-slate-400">Các mục cần ban quản lý xử lý ngay</p>
+        <div className="p-6 space-y-3.5">
+          {todayFacilityShifts.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-xs">
+              Không có ca học nào diễn ra hôm nay.
             </div>
+          ) : (
+            todayFacilityShifts.map((item, idx) => (
+              <div
+                key={item.id}
+                className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 hover:bg-emerald-50/30 rounded-2xl border border-slate-100 transition-all gap-4"
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-[3.5px] h-10 rounded-full shrink-0 ${
+                      idx % 4 === 0
+                        ? 'bg-[#10B981]'
+                        : idx % 4 === 1
+                        ? 'bg-[#A3E635]'
+                        : idx % 4 === 2
+                        ? 'bg-sky-400'
+                        : 'bg-indigo-400'
+                    }`}
+                  />
 
-            <div className="space-y-3">
-              {currentUser.role === 'ADMIN' && pendingScheduleCount > 0 && (
-                <div
-                  onClick={() => navigate('schedule')}
-                  className="flex items-center gap-3 p-3.5 bg-amber-50 hover:bg-amber-100/70 rounded-2xl border border-amber-200 cursor-pointer transition-colors animate-pulse"
-                >
-                  <div className="w-10 h-10 bg-amber-200 text-amber-900 rounded-xl flex items-center justify-center font-bold shrink-0">
-                    {pendingScheduleCount}
+                  <div>
+                    <h4 className="font-bold text-sm sm:text-base text-[#0F172A]">
+                      {item.facilityName}
+                    </h4>
+                    <div className="mt-1">
+                      <span className="inline-flex items-center text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-md">
+                        {item.shiftName}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-bold text-amber-950">Chờ Admin lưu lịch học!</div>
-                    <div className="text-[11px] text-amber-700">Học viên đăng ký ngày cụ thể trong tháng</div>
-                  </div>
                 </div>
-              )}
-              <div
-                onClick={() => navigate('payments')}
-                className="flex items-center gap-3 p-3.5 bg-red-50 hover:bg-red-100/70 rounded-2xl border border-red-100 cursor-pointer transition-colors"
-              >
-                <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-red-600 font-bold shrink-0">
-                  {unpaidStudents.length > 0 ? unpaidStudents.length : 12}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-bold text-red-950">Học viên chưa đóng học phí</div>
-                  <div className="text-[11px] text-red-600">Tháng 08 cần nhắc nhở thu hồi</div>
-                </div>
-              </div>
 
-              <div
-                onClick={() => navigate('students')}
-                className="flex items-center gap-3 p-3.5 bg-orange-50 hover:bg-orange-100/70 rounded-2xl border border-orange-100 cursor-pointer transition-colors"
-              >
-                <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 font-bold shrink-0">
-                  {warningSessionsStudents.length + expiredSessionsStudents.length > 0
-                    ? warningSessionsStudents.length + expiredSessionsStudents.length
-                    : 8}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-bold text-orange-950">Học viên sắp hết số buổi</div>
-                  <div className="text-[11px] text-orange-600">Còn từ 0 - 2 buổi (cần nạp thêm)</div>
+                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                  {item.attendanceDone ? (
+                    <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" />
+                      ĐÃ ĐIỂM DANH
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => handleStartAttendance(item.classId, item.sessionId, item.facilityId)}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#10B981] hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+                    >
+                      <CheckSquare className="w-3.5 h-3.5" />
+                      <span>Điểm danh</span>
+                    </button>
+                  )}
                 </div>
               </div>
-
-              <div
-                onClick={() => navigate('attendance')}
-                className="flex items-center gap-3 p-3.5 bg-blue-50 hover:bg-blue-100/70 rounded-2xl border border-blue-100 cursor-pointer transition-colors"
-              >
-                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600 font-bold shrink-0">
-                  {uncompletedTodaySessions.length > 0 ? uncompletedTodaySessions.length : 3}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-bold text-blue-950">Buổi chưa hoàn tất điểm danh</div>
-                  <div className="text-[11px] text-blue-600">Cần HLV xác nhận ca tối nay</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Dark Highlight Student Progress Card (Geometric Balance Accent) */}
-          <div className="bg-[#0F172A] p-6 rounded-3xl text-white relative overflow-hidden shadow-md">
-            <div className="absolute top-0 right-0 p-8 opacity-15 pointer-events-none">
-              <div className="w-32 h-32 border-8 border-white rounded-full"></div>
-            </div>
-
-            <div className="text-xs font-bold text-[#A3E635] uppercase tracking-wider mb-2">
-              Tiến độ học viên tiêu biểu
-            </div>
-            <div className="text-2xl font-bold mb-1">Nguyễn Văn An</div>
-            <div className="text-xs text-slate-300 mb-4">Lớp Cầu Lông Cơ Bản 01 • Sân 02</div>
-
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs text-slate-300">
-                <span>Số buổi đã học</span>
-                <span className="font-bold text-white">10 / 12 buổi</span>
-              </div>
-              <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                <div className="h-full bg-[#A3E635] rounded-full" style={{ width: '83%' }}></div>
-              </div>
-            </div>
-
-            <div className="mt-4 pt-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-              <span>Học phí: <strong className="text-emerald-400">Đã đóng</strong></span>
-              <span>Đánh giá: <strong className="text-[#A3E635]">Tiến bộ nhanh</strong></span>
-            </div>
-
-            <button
-              onClick={() => navigate('students', 'STU-001')}
-              className="mt-5 w-full py-2.5 bg-slate-800 rounded-xl font-bold text-xs text-slate-200 border border-slate-700 hover:bg-slate-700 hover:text-white transition-colors cursor-pointer"
-            >
-              Xem Chi Tiết Học Viên
-            </button>
-          </div>
+            ))
+          )}
         </div>
       </div>
     </div>

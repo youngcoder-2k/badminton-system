@@ -11,7 +11,8 @@ import {
   AlertTriangle,
   Flame,
   Clock,
-  MessageSquare
+  MessageSquare,
+  CalendarPlus
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { INITIAL_USERS } from '../../data/mockData';
@@ -118,14 +119,18 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSearch, onOpenAddStudent }
           </button>
         )}
 
-        {/* Coach quick register session button */}
+        {/* Coach quick register session button - Nổi bật phục vụ đăng ký ca dạy hàng ngày */}
         {isCoach && (
           <button
-            onClick={() => navigate('schedule')}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#10B981] hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+            onClick={() => navigate('schedule', 'register-coach-session')}
+            className="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-emerald-600/25 ring-2 ring-emerald-400/50 hover:scale-[1.03] active:scale-[0.97] transition-all cursor-pointer group"
+            title="Đăng ký ca dạy hàng ngày"
           >
-            <Clock className="w-3.5 h-3.5" />
-            <span>Đăng ký ca dạy</span>
+            <CalendarPlus className="w-4 h-4 text-white group-hover:rotate-12 transition-transform" />
+            <span className="tracking-tight">Đăng ký ca dạy</span>
+            <span className="hidden md:inline-block px-1.5 py-0.5 rounded-md bg-white/20 text-[10px] font-black uppercase tracking-wider text-emerald-50">
+              Hàng ngày
+            </span>
           </button>
         )}
 
@@ -368,7 +373,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSearch, onOpenAddStudent }
               </div>
 
               <div className="mt-2 pt-2 border-t border-slate-100 px-3 py-1 flex items-center justify-between text-[11px] text-slate-400">
-                <span>SmashZone Pro v2.4</span>
+                <span>HaNoi Team v2.4</span>
                 <button
                   onClick={() => {
                     navigate('settings');

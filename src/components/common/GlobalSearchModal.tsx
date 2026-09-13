@@ -100,7 +100,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen = f
                   <p>Nhập từ khóa để tìm kiếm nhanh trong toàn bộ hệ thống</p>
                   <div className="flex justify-center gap-2 mt-3 text-xs text-slate-500">
                     <span className="px-2 py-1 bg-slate-100 rounded-md">HV001</span>
-                    <span className="px-2 py-1 bg-slate-100 rounded-md">Beginner 01</span>
+                    <span className="px-2 py-1 bg-slate-100 rounded-md">Cơ sở Cầu Giấy</span>
                     <span className="px-2 py-1 bg-slate-100 rounded-md">Nguyễn Minh Anh</span>
                     <span className="px-2 py-1 bg-slate-100 rounded-md">0901234567</span>
                   </div>

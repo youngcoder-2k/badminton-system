@@ -5,9 +5,10 @@ import {
   Phone,
   Calendar,
   BookOpen,
-  Building2,
   Receipt,
-  CheckCircle2
+  CheckCircle2,
+  Clock,
+  XCircle
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Modal } from '../components/common/Modal';
@@ -20,85 +21,54 @@ export interface CoachTaughtShift {
   date: string; // YYYY-MM-DD
   dayOfWeek: string; // 'Thứ Hai', 'Thứ Ba', ...
   shiftId: string;
-  shiftName: string; // Tên ca từ Quản Lý Ca Học & Lịch Ca (Ca Sáng 1, Ca Sáng 2, Ca Chiều, Ca Tối 1, Ca Tối 2...)
+  shiftName: string; // Tên ca từ Quản Lý Ca Học & Lịch Ca (Ca Sáng, Ca 1, Ca 2...)
   timeSlot?: string;
   className?: string;
   facilityName: string;
   court?: string;
-  status: 'Completed' | 'PendingReview';
+  coachAttendanceDone?: boolean;
+  coachAttendance?: {
+    status: 'Present' | 'Late' | 'Absent' | 'Excused' | 'Substituted';
+    checkedBy?: string;
+    checkedByRole?: string;
+    checkedAt?: string;
+  };
 }
 
-// Hàm sinh danh sách ca đã dạy trong tháng cho HLV (phân loại ca lấy trực tiếp từ Quản Lý Ca Học & Lịch Ca)
-const generateCoachShifts = (
-  coach: Coach,
-  systemShifts?: { id: string; name: string; timeSlot: string }[],
-  facilityDefault?: string
-): CoachTaughtShift[] => {
-  const shiftsList = systemShifts && systemShifts.length > 0 ? systemShifts : [
-    { id: 'CA01', name: 'Ca Sáng 1', timeSlot: '06:00 - 07:30' },
-    { id: 'CA02', name: 'Ca Sáng 2', timeSlot: '08:00 - 09:30' },
-    { id: 'CA03', name: 'Ca Chiều', timeSlot: '16:30 - 18:00' },
-    { id: 'CA04', name: 'Ca Tối 1', timeSlot: '18:00 - 19:30' },
-    { id: 'CA05', name: 'Ca Tối 2', timeSlot: '19:30 - 21:00' }
-  ];
-
-  const facilityName = coach.assignedFacilityName || facilityDefault || 'Sân Cầu Lông Cầu Giấy';
-  const storedKey = `badminton_coach_shifts_v5_${coach.id}`;
-  const stored = localStorage.getItem(storedKey);
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    } catch {
-      // ignore
-    }
+// Helper format ngày theo định dạng ngày/tháng/năm (DD/MM/YYYY)
+const formatDateDMY = (dateStr: string) => {
+  if (!dateStr) return '';
+  if (dateStr.includes('/')) return dateStr;
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const [y, m, d] = parts;
+    return `${d}/${m}/${y}`;
   }
+  return dateStr;
+};
 
-  const shiftsData: CoachTaughtShift[] = [];
-  const daysOfWeek = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
-  const count = Math.max(coach.taughtSessionsMonth || 16, 12);
-
-  for (let i = 0; i < count; i++) {
-    const day = Math.min(28, Math.max(1, Math.floor((i / count) * 28) + 1));
-    const dayStr = day < 10 ? `0${day}` : `${day}`;
-    const date = `2026-08-${dayStr}`;
-    const dateObj = new Date(2026, 7, day);
-    const dayOfWeek = daysOfWeek[dateObj.getDay() === 0 ? 6 : dateObj.getDay() - 1] || 'Thứ Tư';
-
-    // Phân bổ trực tiếp theo các ca trong Quản Lý Ca Học & Lịch Ca
-    const curShift = shiftsList[i % shiftsList.length];
-
-    shiftsData.push({
-      id: `SHIFT-${coach.id}-${i + 1}`,
-      coachId: coach.id,
-      date,
-      dayOfWeek,
-      shiftId: curShift.id,
-      shiftName: curShift.name,
-      timeSlot: curShift.timeSlot,
-      className: coach.assignedClassIds?.[i % (coach.assignedClassIds.length || 1)] || 'Beginner 01',
-      facilityName,
-      court: `Sân 0${(i % 3) + 1}`,
-      status: 'Completed'
-    });
+const getDayOfWeekVi = (dateStr: string) => {
+  try {
+    const d = new Date(dateStr);
+    const dayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+    return dayNames[d.getDay()] || '';
+  } catch {
+    return '';
   }
-
-  shiftsData.sort((a, b) => b.date.localeCompare(a.date));
-  return shiftsData;
 };
 
 // Màu sắc badge phân loại ca theo tên ca trong Quản Lý Ca Học
 const getShiftBadgeClass = (shiftName: string) => {
   if (shiftName.includes('Sáng 1')) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-  if (shiftName.includes('Sáng 2')) return 'bg-teal-50 text-teal-700 border-teal-200';
+  if (shiftName.includes('Sáng 2') || shiftName.includes('sáng') || shiftName.includes('Sáng')) return 'bg-teal-50 text-teal-700 border-teal-200';
   if (shiftName.includes('Chiều')) return 'bg-amber-50 text-amber-700 border-amber-200';
-  if (shiftName.includes('Tối 1')) return 'bg-indigo-50 text-indigo-700 border-indigo-200';
-  if (shiftName.includes('Tối 2')) return 'bg-purple-50 text-purple-700 border-purple-200';
+  if (shiftName.includes('Tối 1') || shiftName.includes('Ca 1')) return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+  if (shiftName.includes('Tối 2') || shiftName.includes('Ca 2')) return 'bg-purple-50 text-purple-700 border-purple-200';
   return 'bg-blue-50 text-blue-700 border-blue-200';
 };
 
 export const CoachesView: React.FC = () => {
-  const { coaches, classes, facilities, shifts, addCoach, editCoach, isCoach, showToast } = useApp();
+  const { coaches, classes, facilities, shifts, sessions, addCoach, isCoach, showToast } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -107,50 +77,17 @@ export const CoachesView: React.FC = () => {
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
 
-  // Admin Assign Facility & Shift Modal
-  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-  const [selectedAssignCoach, setSelectedAssignCoach] = useState<Coach | null>(null);
-  const [assignFacilityId, setAssignFacilityId] = useState(facilities[0]?.id || 'CS01');
-  const [assignShiftId, setAssignShiftId] = useState(shifts[0]?.id || 'CA04');
-
   // Modal Chi Tiết Ca Dạy
   const [selectedPayrollCoach, setSelectedPayrollCoach] = useState<Coach | null>(null);
   const [isPayrollModalOpen, setIsPayrollModalOpen] = useState(false);
-  const [coachShiftsMap, setCoachShiftsMap] = useState<Record<string, CoachTaughtShift[]>>({});
 
   // Bộ lọc ca trong modal: 'ALL' hoặc Tên Ca (lấy từ Quản Lý Ca Học & Lịch Ca)
   const [shiftFilter, setShiftFilter] = useState<string>('ALL');
   const [shiftSearch, setShiftSearch] = useState('');
 
-  const openAssignModal = (coach: Coach) => {
-    setSelectedAssignCoach(coach);
-    setAssignFacilityId(coach.assignedFacilityId || facilities[0]?.id || 'CS01');
-    setAssignShiftId(coach.assignedShiftId || shifts[0]?.id || 'CA04');
-    setIsAssignModalOpen(true);
-  };
-
-  const handleSaveAssignment = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedAssignCoach) return;
-    const fac = facilities.find(f => f.id === assignFacilityId);
-    const sh = shifts.find(s => s.id === assignShiftId);
-    editCoach(selectedAssignCoach.id, {
-      assignedFacilityId: fac?.id,
-      assignedFacilityName: fac?.name,
-      assignedShiftId: sh?.id,
-      assignedShiftName: `${sh?.name} (${sh?.timeSlot})`
-    });
-    setIsAssignModalOpen(false);
-    showToast(`Đã cập nhật phân công cho HLV ${selectedAssignCoach.name}`, 'success');
-  };
-
   // Mở Modal Chi Tiết Ca Dạy
   const openPayrollModal = (coach: Coach) => {
     setSelectedPayrollCoach(coach);
-    if (!coachShiftsMap[coach.id]) {
-      const initialShifts = generateCoachShifts(coach, shifts, facilities[0]?.name);
-      setCoachShiftsMap(prev => ({ ...prev, [coach.id]: initialShifts }));
-    }
     setShiftFilter('ALL');
     setShiftSearch('');
     setIsPayrollModalOpen(true);
@@ -159,7 +96,6 @@ export const CoachesView: React.FC = () => {
   const filteredCoaches = coaches.filter(
     c =>
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.phone.includes(searchQuery)
   );
 
@@ -195,17 +131,51 @@ export const CoachesView: React.FC = () => {
     showToast('Thêm huấn luyện viên mới thành công!', 'success');
   };
 
-  // Dữ liệu ca dạy hiện tại của HLV đang chọn trong modal
-  const activeCoachShifts = useMemo(() => {
+  // Dữ liệu ca dạy đã đăng ký của HLV đang chọn trong modal (lấy trực tiếp từ danh sách ca học)
+  // Chỉ hiển thị những ngày HLV đã đăng ký và được Quản lý cơ sở / Admin xác nhận
+  const activeCoachShifts: CoachTaughtShift[] = useMemo(() => {
     if (!selectedPayrollCoach) return [];
-    return coachShiftsMap[selectedPayrollCoach.id] || generateCoachShifts(selectedPayrollCoach, shifts, facilities[0]?.name);
-  }, [selectedPayrollCoach, coachShiftsMap, shifts, facilities]);
+    
+    // Lọc các ca học HLV đã đăng ký phụ trách VÀ đã được Quản lý cơ sở / Admin xác nhận điểm danh
+    const coachSessions = sessions.filter(
+      s =>
+        (s.coachId === selectedPayrollCoach.id ||
+         s.coachName === selectedPayrollCoach.name ||
+         s.coachIds?.includes(selectedPayrollCoach.id)) &&
+        Boolean(s.coachAttendanceDone)
+    );
+
+    return coachSessions
+      .map(s => {
+        const shiftObj = shifts.find(sh => sh.id === s.shiftId);
+        const shiftName = shiftObj?.name || (s.shiftId ? s.shiftId : 'Ca tập');
+        const timeSlot = s.timeSlot || (shiftObj ? shiftObj.timeSlot : `${s.startTime} - ${s.endTime}`);
+
+        return {
+          id: s.id,
+          coachId: s.coachId,
+          date: s.date,
+          dayOfWeek: s.dayOfWeek || getDayOfWeekVi(s.date),
+          shiftId: s.shiftId || '',
+          shiftName: shiftName,
+          timeSlot: timeSlot,
+          className: s.className,
+          facilityName: s.facilityName,
+          court: s.court,
+          coachAttendanceDone: s.coachAttendanceDone,
+          coachAttendance: s.coachAttendance
+        };
+      })
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [selectedPayrollCoach, sessions, shifts]);
 
   // Bộ lọc danh sách ca trong modal
   const filteredActiveShifts = useMemo(() => {
     return activeCoachShifts.filter(shift => {
       const matchFilter = shiftFilter === 'ALL' || shift.shiftName === shiftFilter || shift.shiftId === shiftFilter;
+      const formattedDate = formatDateDMY(shift.date);
       const matchSearch =
+        formattedDate.includes(shiftSearch) ||
         shift.date.includes(shiftSearch) ||
         shift.shiftName.toLowerCase().includes(shiftSearch.toLowerCase()) ||
         shift.facilityName.toLowerCase().includes(shiftSearch.toLowerCase()) ||
@@ -222,9 +192,6 @@ export const CoachesView: React.FC = () => {
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0F172A] tracking-tight">
             Đội Ngũ Huấn Luyện Viên
           </h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Quản lý thông tin HLV, lớp phụ trách và chi tiết ca dạy để tính thù lao ({coaches.length} HLV)
-          </p>
         </div>
 
         {!isCoach && (
@@ -246,7 +213,7 @@ export const CoachesView: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Tìm theo tên HLV, số điện thoại, mã HLV (HLV001)..."
+            placeholder="Tìm theo tên HLV, số điện thoại..."
             className="w-full pl-9 pr-4 py-2 bg-slate-50 text-sm text-[#0F172A] rounded-xl border border-slate-200 outline-none focus:border-[#10B981]"
           />
         </div>
@@ -256,8 +223,14 @@ export const CoachesView: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredCoaches.map(coach => {
           const coachClassesList = classes.filter(c => c.coachId === coach.id);
-          const currentShifts = coachShiftsMap[coach.id] || generateCoachShifts(coach);
-          const sessionsCount = currentShifts.length || coach.taughtSessionsMonth || 0;
+          const coachConfirmedSessions = sessions.filter(
+            s =>
+              (s.coachId === coach.id ||
+               s.coachName === coach.name ||
+               s.coachIds?.includes(coach.id)) &&
+              Boolean(s.coachAttendanceDone)
+          );
+          const sessionsCount = coachConfirmedSessions.length || coach.taughtSessionsMonth || 0;
 
           return (
             <div
@@ -273,14 +246,9 @@ export const CoachesView: React.FC = () => {
                     className="w-14 h-14 rounded-2xl object-cover border-2 border-emerald-500/20 shadow-xs shrink-0"
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-1">
-                      <h3 className="text-base sm:text-lg font-extrabold text-[#0F172A] truncate group-hover:text-emerald-700 transition-colors">
-                        {coach.name}
-                      </h3>
-                      <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full shrink-0">
-                        {coach.code}
-                      </span>
-                    </div>
+                    <h3 className="text-base sm:text-lg font-extrabold text-[#0F172A] truncate group-hover:text-emerald-700 transition-colors">
+                      {coach.name}
+                    </h3>
 
                     <a
                       href={`tel:${coach.phone}`}
@@ -325,25 +293,15 @@ export const CoachesView: React.FC = () => {
               </div>
 
               {/* 3. Nút Xem chi tiết ca dạy */}
-              <div className="pt-4 mt-3 border-t border-slate-100 flex items-center gap-2">
+              <div className="pt-4 mt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => openPayrollModal(coach)}
-                  className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs hover:shadow transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs hover:shadow transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Receipt className="w-4 h-4" />
                   <span>Xem chi tiết ca dạy</span>
                 </button>
-                {!isCoach && (
-                  <button
-                    type="button"
-                    onClick={() => openAssignModal(coach)}
-                    title="Đổi phân công cơ sở & ca"
-                    className="p-2.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl border border-slate-200 transition-colors cursor-pointer shrink-0"
-                  >
-                    <Building2 className="w-4 h-4" />
-                  </button>
-                )}
               </div>
             </div>
           );
@@ -355,8 +313,8 @@ export const CoachesView: React.FC = () => {
         <Modal
           isOpen={isPayrollModalOpen}
           onClose={() => setIsPayrollModalOpen(false)}
-          title={`Chi Tiết Ca Đã Dạy: ${selectedPayrollCoach.name}`}
-          subtitle={`Danh sách các ca đã dạy trong tháng (${selectedPayrollCoach.code})`}
+          title={`Lịch Ca Dạy Đã Đăng Ký: ${selectedPayrollCoach.name}`}
+          subtitle="Danh sách các ca HLV đã đăng ký và trạng thái điểm danh xác nhận từ Admin / Quản lý cơ sở"
           maxWidth="3xl"
         >
           <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
@@ -369,12 +327,7 @@ export const CoachesView: React.FC = () => {
                   className="w-12 h-12 rounded-xl object-cover border-2 border-emerald-400"
                 />
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-extrabold text-base">{selectedPayrollCoach.name}</span>
-                    <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded">
-                      {selectedPayrollCoach.code}
-                    </span>
-                  </div>
+                  <h4 className="font-extrabold text-base">{selectedPayrollCoach.name}</h4>
                   <p className="text-xs text-slate-300 flex items-center gap-2 mt-0.5">
                     <Phone className="w-3.5 h-3.5 text-emerald-400" />
                     <span>{selectedPayrollCoach.phone}</span>
@@ -385,7 +338,7 @@ export const CoachesView: React.FC = () => {
               </div>
             </div>
 
-            {/* 2. Chỉ để lại KPI: Tổng Ca Đã Dạy */}
+            {/* 2. KPI: Ca Dạy Đã Đăng Ký (Chỉ tính ca đã được QL/Admin xác nhận) */}
             <div className="p-4 bg-emerald-50/90 rounded-2xl border border-emerald-200 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
@@ -393,10 +346,10 @@ export const CoachesView: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-xs font-bold uppercase tracking-wider text-emerald-800">
-                    Tổng Ca Đã Dạy
+                    Ca Dạy Đã Đăng Ký (Tháng 08/2026)
                   </span>
                   <p className="text-xs text-emerald-700 mt-0.5">
-                    Số ca huấn luyện viên đã dạy và hoàn thành trong tháng
+                    Chỉ hiển thị những ngày HLV đã đăng ký và được Quản lý cơ sở / Admin xác nhận
                   </p>
                 </div>
               </div>
@@ -459,8 +412,8 @@ export const CoachesView: React.FC = () => {
                     <tr>
                       <th className="py-3 px-3 w-12 text-center">#</th>
                       <th className="py-3 px-4">Ngày dạy</th>
-                      <th className="py-3 px-4">Cơ sở</th>
-                      <th className="py-3 px-4">Phân loại</th>
+                      <th className="py-3 px-4">Cơ Sở</th>
+                      <th className="py-3 px-4">Ca</th>
                       <th className="py-3 px-3.5 text-center">Trạng thái</th>
                     </tr>
                   </thead>
@@ -468,7 +421,7 @@ export const CoachesView: React.FC = () => {
                     {filteredActiveShifts.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="py-8 text-center text-slate-400">
-                          Không tìm thấy ca dạy nào phù hợp với bộ lọc
+                          Chưa có ca dạy nào được Quản lý cơ sở / Admin xác nhận điểm danh
                         </td>
                       </tr>
                     ) : (
@@ -478,8 +431,12 @@ export const CoachesView: React.FC = () => {
                             {idx + 1}
                           </td>
                           <td className="py-3 px-4">
-                            <span className="font-bold text-[#0F172A] block">{shift.date}</span>
-                            <span className="text-[10px] text-slate-400 font-medium">{shift.dayOfWeek}</span>
+                            <span className="font-bold text-[#0F172A] block text-sm">
+                              {formatDateDMY(shift.date)}
+                            </span>
+                            <span className="text-[11px] text-slate-400 font-medium">
+                              {shift.dayOfWeek}
+                            </span>
                           </td>
                           <td className="py-3 px-4 font-semibold text-slate-800">
                             {shift.facilityName}
@@ -490,10 +447,25 @@ export const CoachesView: React.FC = () => {
                             </span>
                           </td>
                           <td className="py-3 px-3.5 text-center">
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                              <CheckCircle2 className="w-3 h-3" />
-                              Đã dạy
-                            </span>
+                            <div className="inline-flex flex-col items-center gap-0.5">
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                                shift.coachAttendance?.status === 'Late'
+                                  ? 'text-amber-700 bg-amber-50 border-amber-200'
+                                  : shift.coachAttendance?.status === 'Absent'
+                                  ? 'text-rose-700 bg-rose-50 border-rose-200'
+                                  : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                              }`}>
+                                <CheckCircle2 className="w-3 h-3" />
+                                {shift.coachAttendance?.status === 'Late'
+                                  ? 'Đã duyệt (Đi muộn)'
+                                  : shift.coachAttendance?.status === 'Absent'
+                                  ? 'Đã duyệt (Vắng)'
+                                  : 'Đã xác nhận (Có mặt)'}
+                              </span>
+                              <span className="text-[9px] text-slate-400 font-medium">
+                                {shift.coachAttendance?.checkedByRole === 'ADMIN' ? 'Admin' : 'QL cơ sở'} đã xác nhận
+                              </span>
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -502,7 +474,7 @@ export const CoachesView: React.FC = () => {
                   <tfoot className="bg-slate-50/90 font-bold text-slate-700 border-t border-slate-200">
                     <tr>
                       <td colSpan={5} className="py-2.5 px-4 text-slate-500 text-xs">
-                        Tổng số: <strong className="text-emerald-700 font-extrabold">{filteredActiveShifts.length}</strong> ca đã dạy
+                        Tổng số: <strong className="text-emerald-700 font-extrabold">{filteredActiveShifts.length}</strong> ca đã xác nhận
                       </td>
                     </tr>
                   </tfoot>
@@ -511,14 +483,14 @@ export const CoachesView: React.FC = () => {
             </div>
 
             {/* Footer Modal */}
-            <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100">
               <span className="text-xs text-slate-400">
-                Phân loại ca được đồng bộ trực tiếp từ Quản Lý Ca Học & Lịch Ca
+                * Chỉ hiển thị những ngày HLV đã đăng ký và được Quản lý cơ sở hoặc Admin xác nhận điểm danh.
               </span>
               <button
                 type="button"
                 onClick={() => setIsPayrollModalOpen(false)}
-                className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors cursor-pointer"
+                className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors cursor-pointer self-end sm:self-auto"
               >
                 Đóng
               </button>
@@ -582,66 +554,6 @@ export const CoachesView: React.FC = () => {
         </form>
       </Modal>
 
-      {/* Admin Assign Facility & Shift Modal */}
-      <Modal
-        isOpen={isAssignModalOpen}
-        onClose={() => setIsAssignModalOpen(false)}
-        title={`Phân Công Cơ Sở & Ca Dạy: ${selectedAssignCoach?.name || ''}`}
-        subtitle="Admin chỉ định sân cầu lông và ca dạy cố định cho huấn luyện viên này"
-        maxWidth="md"
-      >
-        <form onSubmit={handleSaveAssignment} className="space-y-4">
-          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-600 leading-relaxed">
-            Huấn luyện viên <strong>{selectedAssignCoach?.name}</strong> ({selectedAssignCoach?.code}) sẽ chỉ được phép đăng ký và giảng dạy tại đúng cơ sở và ca học được phân công dưới đây.
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Sân cầu lông / Cơ sở phân công *</label>
-            <select
-              value={assignFacilityId}
-              onChange={e => setAssignFacilityId(e.target.value)}
-              className="w-full px-3.5 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-medium"
-            >
-              {facilities.map(f => (
-                <option key={f.id} value={f.id}>
-                  {f.name} ({f.address})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Ca dạy phân công *</label>
-            <select
-              value={assignShiftId}
-              onChange={e => setAssignShiftId(e.target.value)}
-              className="w-full px-3.5 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-medium"
-            >
-              {shifts.map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.timeSlot})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setIsAssignModalOpen(false)}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
-            >
-              Hủy
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs cursor-pointer"
-            >
-              Lưu Phân Công
-            </button>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 };

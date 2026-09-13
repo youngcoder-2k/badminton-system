@@ -16,7 +16,6 @@ import { CoachesView } from './views/CoachesView';
 import { ScheduleView } from './views/ScheduleView';
 import { AttendanceView } from './views/AttendanceView';
 import { PaymentsView } from './views/PaymentsView';
-import { ReportsView } from './views/ReportsView';
 import { SettingsView } from './views/SettingsView';
 import { FacilitiesView } from './views/FacilitiesView';
 import { ShiftsView } from './views/ShiftsView';
@@ -46,7 +45,13 @@ const MainContent: React.FC = () => {
           return (
             <ClassDetailView
               classId={selectedId}
-              onBack={() => navigate('classes', null)}
+              onBack={() => {
+                if (selectedId.startsWith('CLS_')) {
+                  navigate('schedule');
+                } else {
+                  navigate('classes', null);
+                }
+              }}
             />
           );
         }
@@ -79,8 +84,6 @@ const MainContent: React.FC = () => {
         return <AttendanceView />;
       case 'payments':
         return <PaymentsView />;
-      case 'reports':
-        return <ReportsView />;
       case 'chat':
         return <ChatView />;
       case 'settings':

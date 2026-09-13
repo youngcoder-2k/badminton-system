@@ -7,14 +7,14 @@ import {
   Calendar,
   CheckSquare,
   CreditCard,
-  BarChart3,
   Settings,
   Flame,
   Award,
   Zap,
   MapPin,
   Clock,
-  MessageSquare
+  MessageSquare,
+  CalendarPlus
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
@@ -58,7 +58,7 @@ export const Sidebar: React.FC = () => {
     },
     {
       id: 'facilities',
-      label: 'Sân cầu lông',
+      label: 'Cơ sở',
       icon: MapPin,
       roles: ['ADMIN'],
       badge: null
@@ -129,13 +129,6 @@ export const Sidebar: React.FC = () => {
       ) : null
     },
     {
-      id: 'reports',
-      label: 'Thống kê',
-      icon: BarChart3,
-      roles: ['ADMIN'], // Admin sees system reports
-      badge: null
-    },
-    {
       id: 'chat',
       label: 'Kênh Chat Chung',
       icon: MessageSquare,
@@ -160,16 +153,16 @@ export const Sidebar: React.FC = () => {
   return (
     <aside className="hidden lg:flex flex-col w-64 bg-[#0F172A] text-white min-h-screen border-r border-slate-800 shrink-0 sticky top-0 h-screen z-40">
       {/* Brand Logo Header */}
-      <div className="p-6 flex items-center justify-between border-b border-slate-800">
+      <div className="p-5 flex items-center justify-between border-b border-slate-800">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#10B981] rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-md shadow-emerald-500/20">
-            B
+          <div className="w-11 h-11 bg-white rounded-2xl flex items-center justify-center p-1 shadow-md shadow-emerald-500/10 shrink-0 overflow-hidden border border-slate-200/20">
+            <img src="/logo.png" alt="HaNoi Team" className="w-full h-full object-contain" />
           </div>
           <div>
-            <div className="font-bold text-xl tracking-tight italic text-white flex items-center gap-1.5">
-              <span>SMASH PRO</span>
+            <div className="font-extrabold text-lg tracking-tight text-white flex items-center gap-1.5 leading-tight">
+              <span>HANOI TEAM</span>
             </div>
-            <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+            <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
               {currentUser.role === 'ADMIN'
                 ? 'Admin Center'
                 : currentUser.role === 'FACILITY_MANAGER'
@@ -208,6 +201,24 @@ export const Sidebar: React.FC = () => {
 
       {/* Navigation List */}
       <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
+        {/* Nút Đăng ký ca dạy nổi bật cho HLV trong Sidebar */}
+        {isCoach && (
+          <div className="mb-3">
+            <button
+              onClick={() => navigate('schedule', 'register-coach-session')}
+              className="w-full p-3 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold text-xs shadow-md shadow-emerald-500/25 ring-2 ring-emerald-400/40 flex items-center justify-between gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer group"
+              title="Đăng ký ca dạy hàng ngày"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <CalendarPlus className="w-4 h-4 text-white shrink-0 group-hover:rotate-12 transition-transform" />
+                <span className="truncate tracking-tight">Đăng ký ca dạy</span>
+              </div>
+              <span className="px-1.5 py-0.5 rounded bg-white/20 text-[9px] font-black uppercase tracking-wider text-emerald-100 shrink-0">
+                Mỗi ngày
+              </span>
+            </button>
+          </div>
+        )}
         {visibleItems.map(item => {
           const isActive = activeTab === item.id;
           const Icon = item.icon;
@@ -247,7 +258,7 @@ export const Sidebar: React.FC = () => {
               <div className="text-[10px] text-slate-400 truncate">
                 {currentUser.role === 'FACILITY_MANAGER'
                   ? currentUser.facilityName || 'Quản lý cơ sở'
-                  : 'SmashZone Pro v2.4'}
+                  : 'HaNoi Team v2.4'}
               </div>
             </div>
           </div>

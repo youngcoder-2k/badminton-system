@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -19,12 +19,44 @@ import {
   SlidersHorizontal,
   Bell,
   MessageSquare,
-  Award
+  Award,
+  CalendarPlus
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SessionStatusBadge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
 import { SessionSchedule } from '../types';
+
+const formatDateDMY = (dateStr: string) => {
+  if (!dateStr) return '';
+  if (dateStr.includes('/')) return dateStr;
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const [y, m, d] = parts;
+    return `${d}/${m}/${y}`;
+  }
+  return dateStr;
+};
+
+const getFormattedCoachDate = (dateStr: string) => {
+  if (!dateStr) return null;
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const day = parseInt(parts[2], 10);
+    const dateObj = new Date(year, month - 1, day);
+    const weekday = dateObj.toLocaleDateString('vi-VN', { weekday: 'long' });
+    return {
+      day: String(day).padStart(2, '0'),
+      month: `Thg ${month}`,
+      year: String(year),
+      weekday,
+      fullDisplay: `${weekday}, ngày ${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
+    };
+  }
+  return null;
+};
 
 export const ScheduleView: React.FC = () => {
   const {
@@ -47,7 +79,8 @@ export const ScheduleView: React.FC = () => {
     isFacilityManager,
     currentUser,
     assignedSessions,
-    notifications
+    notifications,
+    selectedId
   } = useApp();
 
   const [viewMode, setViewMode] = useState<'weekly' | 'list'>('weekly');
@@ -66,6 +99,13 @@ export const ScheduleView: React.FC = () => {
       n => n.targetRole === 'COACH' && (!n.targetCoachId || n.targetCoachId === currentUser.coachId)
     );
   }, [isCoach, notifications, currentUser.coachId]);
+
+  // Tự động mở Modal Đăng ký ca dạy khi được điều hướng từ nút nổi bật ở Navbar / Dashboard / Mobile
+  useEffect(() => {
+    if (selectedId === 'register-coach-session' && isCoach) {
+      openCoachModal();
+    }
+  }, [selectedId, isCoach]);
 
   // Admin Scheduling Modal
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
@@ -87,6 +127,8 @@ export const ScheduleView: React.FC = () => {
     const d = String(today.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   });
+
+  const selectedCoachDateInfo = useMemo(() => getFormattedCoachDate(coachDate), [coachDate]);
 
   // Days of week for grid
   const weekDays = [
@@ -173,11 +215,6 @@ export const ScheduleView: React.FC = () => {
     return matchesFacility && matchesCoach && matchesShift;
   });
 
-  const handleStartAttendance = (classId: string, date: string, sessionId: string) => {
-    setAttendanceTarget({ classId, date, sessionId });
-    navigate('attendance');
-  };
-
   // Helper xác định ca học & khung giờ
   const getShiftInfo = (session: SessionSchedule) => {
     if (session.shiftId) {
@@ -191,13 +228,142 @@ export const ScheduleView: React.FC = () => {
       if (byTime) return byTime;
     }
     const hour = parseInt(session.startTime?.split(':')[0] || '18', 10);
-    if (hour < 8) return { id: 'CA01', name: 'Ca Sáng 1', timeSlot: '06:00 - 07:30', startTime: '06:00' };
-    if (hour < 12) return { id: 'CA02', name: 'Ca Sáng 2', timeSlot: '08:00 - 09:30', startTime: '08:00' };
-    if (hour < 18) return { id: 'CA03', name: 'Ca Chiều', timeSlot: '16:30 - 18:00', startTime: '16:30' };
+    if (hour < 12) return { id: 'CA01', name: 'Ca sáng', timeSlot: '06:00 - 07:30', startTime: '06:00' };
     if (hour < 19 || (hour === 19 && parseInt(session.startTime?.split(':')[1] || '0', 10) < 30)) {
-      return { id: 'CA04', name: 'Ca Tối 1', timeSlot: '18:00 - 19:30', startTime: '18:00' };
+      return { id: 'CA02', name: 'Ca 1', timeSlot: '18:00 - 19:30', startTime: '18:00' };
     }
-    return { id: 'CA05', name: 'Ca Tối 2', timeSlot: '19:30 - 21:00', startTime: '19:30' };
+    return { id: 'CA03', name: 'Ca 2', timeSlot: '19:30 - 21:00', startTime: '19:30' };
+  };
+
+  // Khử trùng lặp và gộp ca học theo Ngày + Cơ sở + Ca học (tránh trùng ca nhiều lần tại cùng 1 cơ sở)
+  const deduplicatedSessions = useMemo(() => {
+    const map = new Map<string, SessionSchedule>();
+    filteredSessions.forEach(session => {
+      const shiftInfo = getShiftInfo(session);
+      const facName = getSessionFacilityName(session);
+      const key = `${session.date}_${facName}_${shiftInfo.id || shiftInfo.name}`;
+
+      if (!map.has(key)) {
+        map.set(key, { ...session });
+      } else {
+        const existing = map.get(key)!;
+        // Gộp danh sách HLV
+        const allCoaches = [
+          ...(existing.coaches || (existing.coachId ? [{ id: existing.coachId, name: existing.coachName, avatar: existing.coachAvatar } as Coach] : [])),
+          ...(session.coaches || (session.coachId ? [{ id: session.coachId, name: session.coachName, avatar: session.coachAvatar } as Coach] : []))
+        ];
+        const uniqueCoaches = Array.from(new Map(allCoaches.map(c => [c.id || c.name, c])).values());
+
+        // Ưu tiên bản ghi có học viên thực tế
+        const resolvedStudents = Math.max(existing.totalStudents || 0, session.totalStudents || 0);
+
+        map.set(key, {
+          ...existing,
+          ...(existing.totalStudents === 0 && (session.totalStudents || 0) > 0 ? {
+            id: session.id,
+            className: session.className,
+            classId: session.classId,
+            coachId: session.coachId || existing.coachId,
+            coachName: session.coachName || existing.coachName,
+            coachAvatar: session.coachAvatar || existing.coachAvatar,
+          } : {}),
+          coaches: uniqueCoaches,
+          totalStudents: resolvedStudents,
+          attendanceDone: existing.attendanceDone || session.attendanceDone,
+          coachAttendanceDone: existing.coachAttendanceDone || session.coachAttendanceDone,
+          status: existing.status === 'Completed' || session.status === 'Completed' ? 'Completed' : existing.status
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [filteredSessions, facilities, classes, shifts]);
+
+  // Helper lấy dynamic daily class ID: CLS_{facilityId}_{shiftId}_{date}
+  const getDynamicClassId = (session: SessionSchedule) => {
+    if (session.classId && session.classId.startsWith('CLS_')) {
+      return session.classId;
+    }
+    const shiftInfo = getShiftInfo(session);
+    const targetFacility = facilities.find(
+      f =>
+        f.id === session.facilityId ||
+        (session.facilityName && f.name.toLowerCase().includes(session.facilityName.toLowerCase())) ||
+        (session.court && f.name.toLowerCase().includes(session.court.toLowerCase()))
+    ) || facilities[0];
+
+    const sId = session.shiftId || shiftInfo?.id || 'CA01';
+    const fId = session.facilityId || targetFacility?.id || 'CS01';
+    const dStr = session.date || '2026-08-28';
+
+    return `CLS_${fId}_${sId}_${dStr}`;
+  };
+
+  // Kiểm tra ca học đã diễn ra / đã điểm danh (quá khứ) hay chưa học (tương lai)
+  const isPastSession = (session: SessionSchedule) => {
+    if (session.attendanceDone || session.status === 'Completed') return true;
+    const todayStr = '2026-08-28';
+    if (session.date < todayStr) return true;
+    if (session.date > todayStr) return false;
+
+    // Với ca học trong ngày hôm nay: kiểm tra khung giờ kết thúc ca
+    const slot = session.timeSlot || `${session.startTime} - ${session.endTime}`;
+    if (slot) {
+      const timeMatch = slot.match(/(\d{1,2}):(\d{2})\s*[-—]\s*(\d{1,2}):(\d{2})/);
+      if (timeMatch) {
+        const endHour = parseInt(timeMatch[3], 10);
+        const endMinute = parseInt(timeMatch[4], 10);
+        const now = new Date();
+        const curH = now.getHours();
+        const curM = now.getMinutes();
+        if (curH > endHour || (curH === endHour && curM >= endMinute)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const handleStartAttendance = (session: SessionSchedule) => {
+    const dynamicClassId = getDynamicClassId(session);
+    const targetFacility = facilities.find(
+      f =>
+        f.id === session.facilityId ||
+        (session.facilityName && f.name.toLowerCase().includes(session.facilityName.toLowerCase())) ||
+        (session.court && f.name.toLowerCase().includes(session.court.toLowerCase()))
+    ) || facilities[0];
+
+    setAttendanceTarget({
+      classId: dynamicClassId,
+      date: session.date,
+      sessionId: session.id,
+      facilityId: targetFacility.id
+    });
+    navigate('attendance');
+  };
+
+  // Xử lý click vào ca học:
+  // - Những ngày đã qua rồi / đã điểm danh: mở giao diện đã điểm danh của ngày đó (hoặc lịch sử điểm danh)
+  // - Những ngày chưa học: mở giao diện chi tiết ca học như ảnh 2 (Ca sáng • Triều Khúc)
+  const handleSessionClick = (session: SessionSchedule) => {
+    const dynamicClassId = getDynamicClassId(session);
+    const targetFacility = facilities.find(
+      f =>
+        f.id === session.facilityId ||
+        (session.facilityName && f.name.toLowerCase().includes(session.facilityName.toLowerCase())) ||
+        (session.court && f.name.toLowerCase().includes(session.court.toLowerCase()))
+    ) || facilities[0];
+
+    if (isPastSession(session)) {
+      setAttendanceTarget({
+        classId: dynamicClassId,
+        date: session.date,
+        sessionId: session.id,
+        facilityId: targetFacility.id
+      });
+      navigate('attendance');
+    } else {
+      navigate('classes', dynamicClassId);
+    }
   };
 
   // Helper xác định tên sân hiển thị
@@ -280,6 +446,9 @@ export const ScheduleView: React.FC = () => {
     });
     if (ok) {
       setIsCoachModalOpen(false);
+      if (selectedId === 'register-coach-session') {
+        navigate('schedule', null);
+      }
     }
   };
 
@@ -292,35 +461,27 @@ export const ScheduleView: React.FC = () => {
 
     if (!targetClass || !targetShift || !targetCoach) return;
 
-    // Determine day of week
-    const d = new Date(modalDate);
-    const dayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
-    const dayOfWeek = dayNames[d.getDay()];
-
-    addSession({
+    // Build session
+    const newSession: SessionSchedule = {
+      id: `SES_${Date.now()}`,
       classId: targetClass.id,
       className: targetClass.name,
-      level: targetClass.level,
-      facilityId: targetFacility?.id,
-      facilityName: targetFacility?.name,
-      court: targetFacility?.name || 'Sân Cầu Lông',
-      shiftId: targetShift.id,
       coachId: targetCoach.id,
       coachName: targetCoach.name,
-      coachAvatar: targetCoach.avatar,
+      facilityId: targetFacility?.id || 'CS01',
+      facilityName: targetFacility?.name || 'Sân Cầu Lông Cầu Giấy',
+      shiftId: targetShift.id,
+      shiftName: targetShift.name,
+      timeSlot: targetShift.time,
       date: modalDate,
-      dayOfWeek,
-      startTime: targetShift.startTime,
-      endTime: targetShift.endTime,
-      timeSlot: targetShift.timeSlot,
-      status: 'Upcoming',
+      court: targetClass.court || 'Sân 1',
+      currentStudents: targetClass.currentStudentsCount || 0,
+      maxStudents: targetClass.maxStudents || 6,
       attendanceDone: false,
-      totalStudents: targetClass.currentStudentsCount || 10,
-      attendanceRecords: [],
-      coachAttendance: { status: 'Present' },
-      makeupStudents: []
-    });
+      status: 'upcoming'
+    };
 
+    addSession(newSession);
     setIsScheduleModalOpen(false);
   };
 
@@ -336,33 +497,26 @@ export const ScheduleView: React.FC = () => {
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0F172A] tracking-tight">
             {isCoach ? 'Lịch Dạy Của Tôi' : 'Lịch Dạy & Lịch Học Tại Sân'}
           </h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            {isCoach
-              ? 'Giảng viên theo dõi lịch dạy và chủ động đăng ký ngày dạy (Admin sẽ phân công sân & ca)'
-              : 'Admin sắp lịch phân bổ giảng viên, học viên, sân cầu lông và ca tập cụ thể'}
-          </p>
+          {isCoach && (
+            <p className="text-sm text-slate-500 mt-0.5">
+              Giảng viên theo dõi lịch dạy và chủ động đăng ký ngày dạy (Admin sẽ phân công cơ sở & ca)
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Coach Self-Registration Button */}
+          {/* Coach Self-Registration Button - Nổi Bật Phục Vụ Đăng Ký Lịch Dạy Hàng Ngày */}
           {currentUser.role === 'COACH' && (
             <button
               onClick={openCoachModal}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#10B981] hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+              className="inline-flex items-center gap-2.5 px-5 py-2.5 bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black text-xs sm:text-sm rounded-2xl shadow-lg shadow-emerald-500/25 ring-2 ring-emerald-400/50 hover:scale-[1.03] active:scale-[0.97] transition-all cursor-pointer group"
+              title="Đăng ký ca dạy hàng ngày"
             >
-              <CalendarIcon className="w-4 h-4" />
-              <span>+ Đăng Ký Ngày Dạy</span>
-            </button>
-          )}
-
-          {/* Admin Schedule button */}
-          {currentUser.role === 'ADMIN' && (
-            <button
-              onClick={openScheduleModal}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#10B981] hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ Sắp Lịch Dạy & Học</span>
+              <CalendarPlus className="w-4.5 h-4.5 group-hover:rotate-12 transition-transform" />
+              <span>ĐĂNG KÝ CA DẠY HÀNG NGÀY</span>
+              <span className="px-2 py-0.5 bg-white/20 rounded-full text-[10px] uppercase font-black tracking-wider text-emerald-50">
+                HLV
+              </span>
             </button>
           )}
 
@@ -641,7 +795,7 @@ export const ScheduleView: React.FC = () => {
               {/* Grid Body */}
               <div className="grid grid-cols-7 divide-x divide-slate-100 min-h-[520px]">
                 {weekDays.map(day => {
-                  const daySessions = filteredSessions.filter(s => s.date === day.date);
+                  const daySessions = deduplicatedSessions.filter(s => s.date === day.date);
                   return (
                     <div
                       key={day.date}
@@ -666,7 +820,7 @@ export const ScheduleView: React.FC = () => {
                           return (
                             <div
                               key={session.id}
-                              onClick={() => navigate('classes', session.classId)}
+                              onClick={() => handleSessionClick(session)}
                               className="p-3 bg-white hover:bg-emerald-50/30 rounded-2xl border border-slate-200/90 hover:border-emerald-400 shadow-2xs hover:shadow-md transition-all cursor-pointer space-y-2.5 group"
                             >
                               {/* 1. Ca học */}
@@ -730,7 +884,7 @@ export const ScheduleView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredSessions.map(s => {
+                {deduplicatedSessions.map(s => {
                   const shiftInfo = getShiftInfo(s);
                   const coachCount =
                     s.coaches?.length || (s.coachId ? s.coachId.split(',').length : 1);
@@ -738,9 +892,13 @@ export const ScheduleView: React.FC = () => {
                   const facilityDisplay = getSessionFacilityName(s);
 
                   return (
-                    <tr key={s.id} className="hover:bg-slate-50/60 transition-colors">
+                    <tr
+                      key={s.id}
+                      onClick={() => handleSessionClick(s)}
+                      className="hover:bg-slate-50/60 transition-colors cursor-pointer"
+                    >
                       <td className="py-3.5 px-5 font-bold text-[#0F172A] text-xs">
-                        {s.dayOfWeek}, {s.date}
+                        {s.dayOfWeek}, {formatDateDMY(s.date)}
                       </td>
                       <td className="py-3.5 px-4 text-xs font-bold text-[#0F172A]">
                         <div className="flex items-center gap-1.5">
@@ -766,19 +924,9 @@ export const ScheduleView: React.FC = () => {
                         </div>
                       </td>
 
-                    <td className="py-3.5 px-5 text-right space-x-2">
-                      {currentUser.role === 'ADMIN' && (
-                        <button
-                          onClick={() => openAssignSessionModal(s)}
-                          className="px-2.5 py-1 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 shadow-2xs transition-colors cursor-pointer inline-flex items-center gap-1"
-                          title="Admin phân công cơ sở & ca dạy"
-                        >
-                          <SlidersHorizontal className="w-3.5 h-3.5" />
-                          <span>Phân sân & ca</span>
-                        </button>
-                      )}
+                    <td className="py-3.5 px-5 text-right space-x-2" onClick={(e) => e.stopPropagation()}>
                       <button
-                        onClick={() => handleStartAttendance(s.classId, s.date, s.id)}
+                        onClick={() => handleStartAttendance(s)}
                         className={`px-3 py-1 font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer ${
                           canManageCoachAttendance && s.attendanceDone && !s.coachAttendanceDone
                             ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
@@ -820,7 +968,7 @@ export const ScheduleView: React.FC = () => {
       <Modal
         isOpen={isScheduleModalOpen}
         onClose={() => setIsScheduleModalOpen(false)}
-        title="Admin Sắp Lịch Dạy & Học Tại Sân Cầu Lông"
+        title="Admin Sắp Lịch Dạy & Học Tại Cơ Sở"
       >
         <form onSubmit={handleCreateSchedule} className="space-y-4">
           <div>
@@ -929,77 +1077,88 @@ export const ScheduleView: React.FC = () => {
       {/* Coach Self-Registration Modal */}
       <Modal
         isOpen={isCoachModalOpen}
-        onClose={() => setIsCoachModalOpen(false)}
-        title="Huấn Luyện Viên Đăng Ký Ngày Dạy"
+        onClose={() => {
+          setIsCoachModalOpen(false);
+          if (selectedId === 'register-coach-session') {
+            navigate('schedule', null);
+          }
+        }}
+        title="Đăng Ký Ca Dạy Hàng Ngày (Huấn Luyện Viên)"
       >
         <form onSubmit={handleCoachRegister} className="space-y-4">
-          {/* Policy Banner */}
-          <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs text-emerald-950 flex items-start gap-2.5">
-            <CalendarIcon className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-            <div>
-              <strong className="block font-bold">Quy Định Đăng Ký Dạy:</strong>
-              <p className="text-[11px] text-emerald-800 mt-0.5 leading-relaxed">
-                Giáo viên chủ động chọn ngày muốn giảng dạy. Theo quy định hệ thống, <strong>giáo viên không mặc định dạy cố định ca nào và sân nào</strong>. Sau khi giáo viên đăng ký ngày, <strong>Admin hệ thống sẽ tự phân công sân và ca dạy cụ thể</strong> cho buổi dạy.
-              </p>
-            </div>
-          </div>
-
           {/* Ngày đăng ký dạy */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              Ngày đăng ký dạy *
-            </label>
-            <input
-              type="date"
-              required
-              value={coachDate}
-              onChange={e => setCoachDate(e.target.value)}
-              className="w-full px-3.5 py-2.5 text-xs border border-slate-200 rounded-xl outline-none focus:border-[#10B981] font-bold text-[#0F172A] bg-white shadow-2xs"
-            />
-            {coachDate && (
-              <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 pt-1.5">
-                <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                <span>
-                  Lịch chọn:{' '}
-                  <strong className="text-emerald-700">
-                    {new Date(coachDate).toLocaleDateString('vi-VN', {
-                      weekday: 'long',
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
-                  </strong>
-                </span>
-              </p>
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-800 uppercase tracking-wider">
+                <CalendarIcon className="w-4 h-4 text-emerald-600" />
+                <span>Ngày Đăng Ký Dạy</span>
+                <span className="text-rose-500 font-bold">*</span>
+              </label>
+              <span className="text-[11px] font-medium text-slate-400">
+                Thao tác hàng ngày
+              </span>
+            </div>
+
+            <div className="relative group">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-emerald-600 transition-colors">
+                <Clock className="w-4.5 h-4.5" />
+              </div>
+              <input
+                type="date"
+                required
+                value={coachDate}
+                onChange={e => setCoachDate(e.target.value)}
+                className="w-full pl-11 pr-4 py-3 text-sm font-semibold text-slate-800 bg-slate-50/70 hover:bg-slate-50 focus:bg-white border border-slate-200 rounded-2xl outline-none transition-all focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 shadow-2xs cursor-pointer"
+              />
+            </div>
+
+            {/* Selected Date Card */}
+            {selectedCoachDateInfo && (
+              <div className="p-3.5 bg-gradient-to-br from-emerald-50/90 via-teal-50/40 to-slate-50 border border-emerald-200/80 rounded-2xl flex items-center gap-3.5 shadow-2xs">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex flex-col items-center justify-center shadow-xs shrink-0 ring-2 ring-emerald-200/60">
+                  <span className="text-[10px] font-bold uppercase tracking-wider leading-none text-emerald-100">
+                    {selectedCoachDateInfo.month}
+                  </span>
+                  <span className="text-lg font-black leading-tight">
+                    {selectedCoachDateInfo.day}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] font-semibold text-emerald-800 uppercase tracking-wide">
+                    Lịch đăng ký
+                  </div>
+                  <div className="text-xs font-bold text-slate-900 capitalize truncate">
+                    {selectedCoachDateInfo.fullDisplay}
+                  </div>
+                </div>
+                <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold shrink-0">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Sẵn sàng</span>
+                </div>
+              </div>
             )}
           </div>
 
-          {/* Sân & Ca dạy do Admin phân công */}
-          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
-              <Building2 className="w-4 h-4 text-emerald-600" />
-              <span>Phân bổ Sân cầu lông & Ca dạy</span>
-            </div>
-            <p className="text-[11px] text-slate-600 leading-relaxed">
-              Buổi dạy sau khi đăng ký sẽ gửi thông báo đến <strong>Admin hệ thống</strong>. Admin sẽ trực tiếp phân công cơ sở sân và ca dạy thích hợp cho bạn.
-            </p>
-          </div>
-
           {/* Form Actions */}
-          <div className="pt-2 flex justify-end gap-2">
+          <div className="pt-2 border-t border-slate-100 flex justify-end gap-2">
             <button
               type="button"
-              onClick={() => setIsCoachModalOpen(false)}
-              className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+              onClick={() => {
+                setIsCoachModalOpen(false);
+                if (selectedId === 'register-coach-session') {
+                  navigate('schedule', null);
+                }
+              }}
+              className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
             >
               Hủy
             </button>
             <button
               type="submit"
               disabled={!coachDate}
-              className={`px-5 py-2.5 text-xs font-bold text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 ${
+              className={`px-5 py-2.5 text-xs font-bold text-white rounded-xl shadow-xs transition-all flex items-center gap-2 ${
                 coachDate
-                  ? 'bg-[#10B981] hover:bg-emerald-600 cursor-pointer'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 cursor-pointer shadow-md shadow-emerald-500/25 active:scale-[0.99]'
                   : 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-60'
               }`}
             >
@@ -1017,7 +1176,7 @@ export const ScheduleView: React.FC = () => {
           setIsAssignSessionModalOpen(false);
           setSessionToAssign(null);
         }}
-        title="Admin Phân Công Sân Cầu Lông & Ca Dạy Cho Buổi Học"
+        title="Admin Phân Công Cơ Sở & Ca Dạy Cho Buổi Học"
       >
         {sessionToAssign && (
           <form onSubmit={handleSaveSessionAssignment} className="space-y-4">
@@ -1033,7 +1192,7 @@ export const ScheduleView: React.FC = () => {
               <div className="flex justify-between text-slate-600">
                 <span>Ngày học:</span>
                 <strong className="text-[#0F172A]">
-                  {sessionToAssign.dayOfWeek}, {sessionToAssign.date}
+                  {sessionToAssign.dayOfWeek}, {formatDateDMY(sessionToAssign.date)}
                 </strong>
               </div>
               {sessionToAssign.isCoachRegistered && (

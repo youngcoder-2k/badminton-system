@@ -63,7 +63,7 @@ export const StudentsView: React.FC = () => {
     ? currentUser.facilityId
     : (facilities[0]?.id || 'CS01');
   const [newFacilityId, setNewFacilityId] = useState(defaultFacilityId);
-  const [newShiftId, setNewShiftId] = useState(shifts[3]?.id || 'CA04'); // Default 18:00 - 19:30
+  const [newShiftId, setNewShiftId] = useState(shifts[1]?.id || 'CA02'); // Default 18:00 - 19:30
 
   // Specific Dates & Month Mini-Calendar Picker
   const [selectedCalMonth, setSelectedCalMonth] = useState('2026-08'); // YYYY-MM
@@ -88,7 +88,7 @@ export const StudentsView: React.FC = () => {
   // Scheduled Sessions with facility and shift for each date
   const [newScheduledSessions, setNewScheduledSessions] = useState<ScheduledSession[]>(() => {
     const targetFac = facilities.find(f => f.id === defaultFacilityId) || facilities[0];
-    const targetShift = shifts[3] || shifts[0];
+    const targetShift = shifts[1] || shifts[0];
     return [
       '2026-08-03', '2026-08-05', '2026-08-07', '2026-08-10', '2026-08-12', '2026-08-14',
       '2026-08-17', '2026-08-19', '2026-08-21', '2026-08-24', '2026-08-26', '2026-08-28'
@@ -96,8 +96,8 @@ export const StudentsView: React.FC = () => {
       date: d,
       facilityId: targetFac?.id || 'CS01',
       facilityName: formatCleanFacilityName(targetFac?.name),
-      shiftId: targetShift?.id || 'CA04',
-      shiftName: targetShift?.name || 'Ca Tối 1',
+      shiftId: targetShift?.id || 'CA02',
+      shiftName: targetShift?.name || 'Ca 1',
       timeSlot: targetShift?.timeSlot || '18:00 - 19:30'
     }));
   });
@@ -180,8 +180,8 @@ export const StudentsView: React.FC = () => {
             date: dateStr,
             facilityId: targetFacility?.id || 'CS01',
             facilityName: formatCleanFacilityName(targetFacility?.name),
-            shiftId: targetShift?.id || 'CA04',
-            shiftName: targetShift?.name || 'Ca Tối 1',
+            shiftId: targetShift?.id || 'CA02',
+            shiftName: targetShift?.name || 'Ca 1',
             timeSlot: targetShift?.timeSlot || '18:00 - 19:30'
           };
           return [...prevSessions, newSession].sort((a, b) => a.date.localeCompare(b.date));
@@ -227,8 +227,8 @@ export const StudentsView: React.FC = () => {
         date: d,
         facilityId: targetFac?.id || 'CS01',
         facilityName: formatCleanFacilityName(targetFac?.name),
-        shiftId: targetShift?.id || 'CA04',
-        shiftName: targetShift?.name || 'Ca Tối 1',
+        shiftId: targetShift?.id || 'CA02',
+        shiftName: targetShift?.name || 'Ca 1',
         timeSlot: targetShift?.timeSlot || '18:00 - 19:30'
       }))
     );
@@ -242,7 +242,7 @@ export const StudentsView: React.FC = () => {
   // Renew Modal State
   const [renewModalStudent, setRenewModalStudent] = useState<Student | null>(null);
   const [renewFacilityId, setRenewFacilityId] = useState<string>(facilities[0]?.id || 'CS01');
-  const [renewShiftId, setRenewShiftId] = useState<string>(shifts[0]?.id || 'CA04');
+  const [renewShiftId, setRenewShiftId] = useState<string>(shifts[1]?.id || 'CA02');
   const [renewMonthRaw, setRenewMonthRaw] = useState('2026-09');
   const [renewUnitPrice, setRenewUnitPrice] = useState<number>(sessionUnitPrice || 150000);
   const [renewSessionsCount, setRenewSessionsCount] = useState<number>(12);
@@ -532,9 +532,9 @@ export const StudentsView: React.FC = () => {
       facilityName: finalFacilityName,
       courtName: finalFacilityName,
       fixedShiftId: targetShift?.id,
-      fixedShiftName: targetShift?.name || 'Ca Tối 1',
+      fixedShiftName: targetShift?.name || 'Ca 1',
       shiftId: targetShift?.id,
-      shiftName: targetShift?.name || 'Ca Tối 1',
+      shiftName: targetShift?.name || 'Ca 1',
       timeSlot: targetShift?.timeSlot || '18:00 - 19:30',
 
       scheduledSessions: newScheduledSessions,
@@ -694,7 +694,7 @@ export const StudentsView: React.FC = () => {
             Quản Lý Học Viên
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Đăng ký lịch cố định (thứ, ca, cơ sở), tính phép (4 buổi = 1 phép) và gia hạn cộng dồn ({displayStudents.length} học viên)
+            Đăng ký lịch cố định (thứ, ca, cơ sở), quản lý phép và gia hạn cộng dồn ({displayStudents.length} học viên)
           </p>
         </div>
 
@@ -729,10 +729,10 @@ export const StudentsView: React.FC = () => {
             onChange={e => setSearchQuery(e.target.value)}
             placeholder={
               currentUser.role === 'ADMIN'
-                ? 'Tìm tên học viên, SĐT, sân cầu lông...'
+                ? 'Tìm tên học viên, SĐT, cơ sở...'
                 : currentUser.role === 'FACILITY_MANAGER'
                 ? 'Tìm tên học viên, mã HV (HV001), SĐT...'
-                : 'Tìm tên học viên, mã HV (HV001), SĐT, sân cầu lông...'
+                : 'Tìm tên học viên, mã HV (HV001), SĐT, cơ sở...'
             }
             className="w-full pl-9 pr-4 py-2 bg-slate-50 hover:bg-slate-100/80 focus:bg-white text-sm text-[#0F172A] placeholder:text-slate-400 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] transition-all"
           />
@@ -745,10 +745,10 @@ export const StudentsView: React.FC = () => {
             <select
               value={selectedFacility}
               onChange={e => setSelectedFacility(e.target.value)}
-              aria-label="Lọc theo sân cầu lông"
+              aria-label="Lọc theo cơ sở"
               className="px-3 py-1.5 bg-slate-50 text-xs font-semibold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer"
             >
-              <option value="ALL">Tất cả sân cầu lông</option>
+              <option value="ALL">Tất cả cơ sở</option>
               {facilities.map(f => (
                 <option key={f.id} value={f.id}>
                   {f.name}
@@ -793,7 +793,7 @@ export const StudentsView: React.FC = () => {
               <tr className="border-b border-slate-100 bg-slate-50/75 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                 <th className="py-3.5 px-4">Học viên</th>
                 {currentUser.role !== 'FACILITY_MANAGER' && (
-                  <th className="py-3.5 px-4">Sân cầu lông</th>
+                  <th className="py-3.5 px-4">Cơ sở</th>
                 )}
                 <th className="py-3.5 px-4">Quỹ phép</th>
                 <th className="py-3.5 px-4 w-52">Tiến độ buổi học</th>
@@ -853,7 +853,7 @@ export const StudentsView: React.FC = () => {
                             )}
                           </strong>
                           <span className="text-slate-400 text-[11px]">
-                            {student.shiftName || student.fixedShiftName || 'Ca Tối 1'}
+                            {student.shiftName || student.fixedShiftName || 'Ca 1'}
                           </span>
                         </td>
                       )}
@@ -1418,7 +1418,7 @@ export const StudentsView: React.FC = () => {
             <div>
               <div className="font-bold text-xs text-[#0F172A]">Chưa có file mẫu Excel?</div>
               <div className="text-[11px] text-slate-500">
-                Tải file mẫu chuẩn với các cột: Họ tên, SĐT, Sân cầu lông, Ca học, Ngày học cụ thể, Học phí.
+                Tải file mẫu chuẩn với các cột: Họ tên, SĐT, Cơ sở, Ca học, Ngày học cụ thể, Học phí.
               </div>
             </div>
             <button

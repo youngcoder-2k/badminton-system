@@ -15,7 +15,7 @@ import { useApp } from '../context/AppContext';
 export const SettingsView: React.FC = () => {
   const { showToast, currentUser } = useApp();
 
-  const [centerName, setCenterName] = useState('SmashZone Badminton Academy');
+  const [centerName, setCenterName] = useState('HaNoi Team Badminton Academy');
   const [address, setAddress] = useState('128 Nguyễn Trãi, Quận 1, TP. Hồ Chí Minh');
   const [phone, setPhone] = useState('1900 6868');
   const [totalCourts, setTotalCourts] = useState(5);
@@ -25,7 +25,7 @@ export const SettingsView: React.FC = () => {
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
-    showToast('Cấu hình hệ thống SmashZone đã được cập nhật thành công!', 'success');
+    showToast('Cấu hình hệ thống HaNoi Team đã được cập nhật thành công!', 'success');
   };
 
   return (
@@ -42,10 +42,21 @@ export const SettingsView: React.FC = () => {
 
       <form onSubmit={handleSaveSettings} className="space-y-6">
         {/* Thông tin trung tâm */}
-        <div className="p-6 bg-white rounded-3xl border border-slate-100 shadow-xs space-y-4">
+        <div className="p-6 bg-white rounded-3xl border border-slate-100 shadow-xs space-y-5">
           <div className="flex items-center gap-2 text-[#0F172A] font-extrabold text-base">
             <Building className="w-5 h-5 text-[#10B981]" />
             <span>Thông Tin Trung Tâm Cầu Lông</span>
+          </div>
+
+          {/* Logo Display */}
+          <div className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
+            <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 p-1.5 flex items-center justify-center shadow-xs shrink-0 overflow-hidden">
+              <img src="/logo.png" alt="HaNoi Team Logo" className="w-full h-full object-contain" />
+            </div>
+            <div>
+              <div className="text-sm font-extrabold text-slate-900">Logo Hệ Thống: HaNoi Team</div>
+              <div className="text-xs text-slate-500 mt-0.5">Logo nhận diện thương hiệu áp dụng toàn bộ giao diện quản trị, HLV và học viên</div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

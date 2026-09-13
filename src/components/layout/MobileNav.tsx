@@ -8,7 +8,6 @@ import {
   Menu,
   X,
   CreditCard,
-  BarChart3,
   UserCheck,
   Settings,
   Flame,
@@ -17,7 +16,8 @@ import {
   Bell,
   MapPin,
   Clock,
-  MessageSquare
+  MessageSquare,
+  CalendarPlus
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { INITIAL_USERS } from '../../data/mockData';
@@ -81,10 +81,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSearch }) => {
       {/* Top Mobile & Tablet Bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-[#0F172A] text-white z-40 px-3 sm:px-4 flex items-center justify-between border-b border-slate-800 shadow-sm">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-[#10B981] flex items-center justify-center text-white font-bold text-base shadow-xs">
-            B
+          <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center p-0.5 shadow-xs shrink-0 overflow-hidden border border-slate-200/20">
+            <img src="/logo.png" alt="HaNoi Team" className="w-full h-full object-contain" />
           </div>
-          <span className="font-bold text-base tracking-tight italic">SMASH PRO</span>
+          <span className="font-extrabold text-base tracking-tight text-white">HANOI TEAM</span>
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-[#A3E635] border border-slate-700">
             {currentUser.role === 'ADMIN' ? 'Admin' : currentUser.role === 'FACILITY_MANAGER' ? 'QL Sân' : 'HLV'}
           </span>
@@ -111,6 +111,18 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSearch }) => {
           >
             <MessageSquare className="w-4.5 h-4.5" />
           </button>
+
+          {/* Quick Register Shift for Coach (Mobile Top Bar) */}
+          {isCoach && (
+            <button
+              onClick={() => navigate('schedule', 'register-coach-session')}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 active:scale-95 text-white rounded-xl text-xs font-black shadow-xs ring-1 ring-emerald-300/40 cursor-pointer"
+              title="Đăng ký ca dạy hàng ngày"
+            >
+              <CalendarPlus className="w-3.5 h-3.5 text-white" />
+              <span className="text-[11px] font-black">Đăng ký ca</span>
+            </button>
+          )}
 
           {/* Quick Attendance */}
           <button
@@ -247,12 +259,37 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSearch }) => {
               </div>
             )}
 
+            {/* Coach Daily Shift Registration Hero Banner in Drawer */}
+            {isCoach && (
+              <button
+                onClick={() => {
+                  setIsDrawerOpen(false);
+                  navigate('schedule', 'register-coach-session');
+                }}
+                className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white font-extrabold text-xs shadow-md shadow-emerald-900/30 ring-2 ring-emerald-400/50 flex items-center justify-between gap-3 active:scale-[0.98] transition-all cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
+                    <CalendarPlus className="w-4.5 h-4.5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-black text-white flex items-center gap-1.5">
+                      <span>ĐĂNG KÝ CA DẠY</span>
+                      <span className="px-1.5 py-0.2 bg-white/25 rounded text-[9px] uppercase tracking-wider">Hàng ngày</span>
+                    </div>
+                    <div className="text-[10px] text-emerald-100 font-normal">Chủ động chọn ngày dạy mỗi ngày</div>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-white/80 shrink-0" />
+              </button>
+            )}
+
             {/* All Navigation Links */}
             <nav className="flex-1 overflow-y-auto space-y-1">
               {[
                 { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
                 ...(currentUser.role === 'ADMIN'
-                  ? [{ id: 'facilities', label: 'Cơ sở & Sân', icon: MapPin }]
+                  ? [{ id: 'facilities', label: 'Cơ sở', icon: MapPin }]
                   : []),
                 ...(currentUser.role === 'ADMIN'
                   ? [{ id: 'shifts', label: 'Ca học', icon: Clock }]
@@ -266,9 +303,6 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSearch }) => {
                 { id: 'attendance', label: 'Điểm danh', icon: CheckSquare },
                 ...(currentUser.role === 'ADMIN' || currentUser.role === 'FACILITY_MANAGER'
                   ? [{ id: 'payments', label: 'Học phí & Thu ngân', icon: CreditCard }]
-                  : []),
-                ...(currentUser.role === 'ADMIN'
-                  ? [{ id: 'reports', label: 'Thống kê', icon: BarChart3 }]
                   : []),
                 { id: 'chat', label: 'Kênh Chat Chung', icon: MessageSquare },
                 { id: 'settings', label: 'Cài đặt', icon: Settings }

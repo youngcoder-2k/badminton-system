@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   ArrowLeft,
   Clock,
@@ -11,11 +11,21 @@ import {
   Sparkles,
   Plus,
   Search,
-  Check
+  Check,
+  UserPlus,
+  Trash2,
+  X
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Modal } from '../components/common/Modal';
 import { Coach, Student } from '../types';
+
+export interface AssignmentGroup {
+  id: string;
+  name: string;
+  coachIds: string[];
+  studentIds: string[];
+}
 
 interface ClassDetailViewProps {
   classId: string;
@@ -34,33 +44,223 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
     currentUser,
     managedFacilityId,
     updateDailyClassNote,
+    dailyStudentAssignments,
     classCoachStudentAssignments,
     assignStudentToCoachInClass,
-    batchAssignStudentsToCoachInClass
+    batchAssignStudentsToCoachInClass,
+    addCoachToDailyClass,
+    removeCoachFromDailyClass,
+    addStudentsToDailyClass,
+    removeStudentFromDailyClass
   } = useApp();
 
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [detailNoteInput, setDetailNoteInput] = useState('');
 
   const currentClass = getClassById(classId) || classes.find(c => c.id === classId) || classes[0];
+  const isCoach = currentUser.role === 'COACH';
   const canManage =
     currentUser.role === 'ADMIN' ||
     (currentUser.role === 'FACILITY_MANAGER' && managedFacilityId && currentClass.facilityId === managedFacilityId);
   const canManageNote = canManage;
+
+  const classDate = useMemo(() => {
+    if (currentClass.startDate) return currentClass.startDate;
+    if (currentClass.id.startsWith('CLS_')) {
+      const parts = currentClass.id.split('_');
+      if (parts.length >= 4) {
+        return parts.slice(3).join('_');
+      }
+    }
+    return '2026-08-28';
+  }, [currentClass]);
+
+  const isClassToday = useMemo(() => {
+    const systemToday = '2026-08-28';
+    const realToday = new Date().toISOString().split('T')[0];
+    return classDate === systemToday || classDate === realToday;
+  }, [classDate]);
+
+  // Load saved note on class change
+  useEffect(() => {
+    setDetailNoteInput(currentClass.preSessionNote || currentClass.note || '');
+  }, [currentClass.id, currentClass.preSessionNote, currentClass.note]);
+
+  const handleSaveNote = () => {
+    updateDailyClassNote(currentClass.id, detailNoteInput);
+    setIsEditingNote(false);
+  };
+
+  const sessionForClass = useMemo(() => {
+    return sessions.find(
+      s =>
+        s.classId === currentClass.id ||
+        s.id === currentClass.id ||
+        (s.date === classDate &&
+         s.shiftId === currentClass.shiftId &&
+         (s.facilityId === currentClass.facilityId || !currentClass.facilityId))
+    );
+  }, [sessions, currentClass, classDate]);
+
+  // Nhắc nhở dặn dò HLV trước ca dạy chỉ hiển thị với những lớp chưa diễn ra
+  const isClassUpcoming = useMemo(() => {
+    // 1. Buổi học đã điểm danh hoặc đã xong -> Đã diễn ra
+    if (sessionForClass?.attendanceDone || sessionForClass?.status === 'Completed') {
+      return false;
+    }
+
+    // 2. So sánh ngày với mốc hệ thống (2026-08-28)
+    const todayStr = '2026-08-28';
+    if (classDate < todayStr) return false;
+    if (classDate > todayStr) return true;
+
+    // 3. Với ca trong ngày hôm nay (2026-08-28), kiểm tra khung giờ kết thúc ca
+    const slot = currentClass.timeSlot || sessionForClass?.timeSlot;
+    if (slot) {
+      const timeMatch = slot.match(/(\d{1,2}):(\d{2})\s*[-—]\s*(\d{1,2}):(\d{2})/);
+      if (timeMatch) {
+        const endHour = parseInt(timeMatch[3], 10);
+        const endMinute = parseInt(timeMatch[4], 10);
+        const now = new Date();
+        const curH = now.getHours();
+        const curM = now.getMinutes();
+        if (curH > endHour || (curH === endHour && curM >= endMinute)) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  }, [classDate, sessionForClass, currentClass.timeSlot]);
 
   const [draggedStudentId, setDraggedStudentId] = useState<string | null>(null);
   const [dragOverTargetId, setDragOverTargetId] = useState<string | null>(null);
   const [reassignModalStudent, setReassignModalStudent] = useState<Student | null>(null);
   const [studentViewMode, setStudentViewMode] = useState<'list' | 'by_coach'>('list');
 
-  // Batch Assign Students State
-  const [batchAssignCoach, setBatchAssignCoach] = useState<Coach | null>(null);
-  const [batchSelectedStudentIds, setBatchSelectedStudentIds] = useState<string[]>([]);
-  const [batchSearchQuery, setBatchSearchQuery] = useState('');
-
   // Mobile Touch Drag & Drop State
   const [touchStudent, setTouchStudent] = useState<Student | null>(null);
   const [touchDragPos, setTouchDragPos] = useState<{ x: number; y: number } | null>(null);
+
+  const classStudents = useMemo(() => {
+    const studentIdSet = new Set<string>(currentClass.studentIds || []);
+    const manualIds = dailyStudentAssignments?.[currentClass.id] || [];
+    manualIds.forEach(id => studentIdSet.add(id));
+
+    if (studentIdSet.size > 0) {
+      return Array.from(studentIdSet)
+        .map(id => students.find(s => s.id === id))
+        .filter((s): s is Student => Boolean(s));
+    }
+    return students.filter(s => s.classId === currentClass.id);
+  }, [currentClass, students, dailyStudentAssignments]);
+
+  // Group Assignment State (Each group/card can have multiple coaches and multiple students)
+  const storageKey = `badminton_assignment_groups_v5_${currentClass.id}`;
+
+  const [assignmentGroups, setAssignmentGroups] = useState<AssignmentGroup[]>(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return [];
+  });
+
+  const saveAssignmentGroups = (newGroups: AssignmentGroup[]) => {
+    // Ensure strict mutual exclusivity across groups for both coaches and students
+    const seenCoachIds = new Set<string>();
+    const seenStudentIds = new Set<string>();
+    const cleaned = newGroups.map(g => {
+      const coachIds = g.coachIds.filter(cid => {
+        if (seenCoachIds.has(cid)) return false;
+        seenCoachIds.add(cid);
+        return true;
+      });
+      const studentIds = g.studentIds.filter(sid => {
+        if (seenStudentIds.has(sid)) return false;
+        seenStudentIds.add(sid);
+        return true;
+      });
+      return { ...g, coachIds, studentIds };
+    });
+
+    setAssignmentGroups(cleaned);
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(cleaned));
+    } catch (e) {
+      console.error(e);
+    }
+
+    // 1. Sync all unique coach IDs to dailyCoachAssignments
+    const allCoachIds = Array.from(new Set(cleaned.flatMap(g => g.coachIds)));
+    if (allCoachIds.length > 0) {
+      addCoachToDailyClass(currentClass.id, allCoachIds);
+    }
+
+    // 2. Sync to classCoachStudentAssignments for backward compatibility
+    allCoachIds.forEach(cid => {
+      const assignedSids = Array.from(new Set(
+        cleaned.filter(g => g.coachIds.includes(cid)).flatMap(g => g.studentIds)
+      ));
+      batchAssignStudentsToCoachInClass(currentClass.id, cid, assignedSids);
+    });
+  };
+
+  const classCoaches: Coach[] = useMemo(() => {
+    const map = new Map<string, Coach>();
+
+    if (currentClass.coaches && currentClass.coaches.length > 0) {
+      currentClass.coaches.forEach(c => map.set(c.id, c));
+    } else if (currentClass.coachName && currentClass.coachName !== 'Chưa có HLV') {
+      const found = coaches.find(c => c.name === currentClass.coachName || c.id === currentClass.coachId);
+      if (found) map.set(found.id, found);
+    }
+
+    // Include coaches added inside assignment groups
+    assignmentGroups.forEach(g => {
+      g.coachIds.forEach(cid => {
+        if (!map.has(cid)) {
+          const found = coaches.find(c => c.id === cid);
+          if (found) map.set(found.id, found);
+        }
+      });
+    });
+
+    return Array.from(map.values());
+  }, [currentClass, coaches, assignmentGroups]);
+
+  const assignedStudentIdSet = useMemo(() => {
+    const set = new Set<string>();
+    assignmentGroups.forEach(g => {
+      g.studentIds.forEach(sid => set.add(sid));
+    });
+    return set;
+  }, [assignmentGroups]);
+
+  const unassignedStudents = useMemo(() => {
+    return classStudents.filter(s => !assignedStudentIdSet.has(s.id));
+  }, [classStudents, assignedStudentIdSet]);
+
+  const handleDropStudent = (studentId: string, targetGroupId: string | null) => {
+    const updated = assignmentGroups.map(g => {
+      if (g.id === targetGroupId) {
+        if (!g.studentIds.includes(studentId)) {
+          return { ...g, studentIds: [...g.studentIds, studentId] };
+        }
+        return g;
+      } else {
+        return { ...g, studentIds: g.studentIds.filter(id => id !== studentId) };
+      }
+    });
+    saveAssignmentGroups(updated);
+  };
 
   const handleTouchStart = (student: Student, e: React.TouchEvent) => {
     if (!canManage) return;
@@ -90,8 +290,7 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
 
   const handleTouchEnd = () => {
     if (touchStudent && dragOverTargetId) {
-      assignStudentToCoachInClass(
-        currentClass.id,
+      handleDropStudent(
         touchStudent.id,
         dragOverTargetId === 'unassigned' ? null : dragOverTargetId
       );
@@ -105,133 +304,117 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
     setDraggedStudentId(null);
   };
 
-  const classStudents = useMemo(() => {
-    if (currentClass.studentIds && currentClass.studentIds.length > 0) {
-      return currentClass.studentIds
-        .map(id => students.find(s => s.id === id))
-        .filter((s): s is typeof students[0] => Boolean(s));
-    }
-    return students.filter(s => s.classId === currentClass.id);
-  }, [currentClass, students]);
+  const handleAddGroup = () => {
+    const newGroup: AssignmentGroup = {
+      id: `grp_${Date.now()}`,
+      name: `Nhóm ${assignmentGroups.length + 1}`,
+      coachIds: [],
+      studentIds: []
+    };
+    saveAssignmentGroups([...assignmentGroups, newGroup]);
+  };
 
-  const classCoaches: Coach[] = useMemo(() => {
-    if (currentClass.coaches && currentClass.coaches.length > 0) {
-      return currentClass.coaches;
+  const handleDeleteGroup = (groupId: string) => {
+    const target = assignmentGroups.find(g => g.id === groupId);
+    if (!target) return;
+    if (window.confirm(`Bạn có chắc muốn xóa "${target.name}"? Các học viên trong nhóm sẽ chuyển về "Chưa phân công".`)) {
+      const updated = assignmentGroups.filter(g => g.id !== groupId);
+      saveAssignmentGroups(updated);
     }
-    if (currentClass.coachName && currentClass.coachName !== 'Chưa có HLV') {
-      const found = coaches.find(c => c.name === currentClass.coachName || c.id === currentClass.coachId);
-      if (found) return [found];
-      return [{
-        id: currentClass.coachId || 'HLV_DEFAULT',
-        code: currentClass.coachId || 'HLV_DEFAULT',
-        name: currentClass.coachName,
-        avatar: currentClass.coachAvatar || '',
-        specialty: 'BWF Certified Coach',
-        phone: '0901 000 000',
-        email: 'coach@smashpro.vn',
-        level: 'Senior',
-        rating: 4.9,
-        status: 'Active',
-        taughtSessionsMonth: 24,
-        taughtHoursMonth: 36,
-        totalStudents: 18,
-        assignedClassIds: [currentClass.id],
-        joinedDate: '2025-01-01',
-        hourlyRate: 300000
-      }];
-    }
-    return [];
-  }, [currentClass, coaches]);
+  };
 
-  const currentAssignments = classCoachStudentAssignments[currentClass.id] || {};
-
-  const coachStudentsMap = useMemo(() => {
-    const map: Record<string, Student[]> = {};
-    classCoaches.forEach(c => {
-      map[c.id] = [];
+  const handleRemoveCoachFromGroup = (groupId: string, coachId: string) => {
+    const updated = assignmentGroups.map(g => {
+      if (g.id !== groupId) return g;
+      return { ...g, coachIds: g.coachIds.filter(id => id !== coachId) };
     });
+    saveAssignmentGroups(updated);
+  };
 
-    const unassigned: Student[] = [];
-    const assignedStudentIds = new Set<string>();
-
-    // 1. Explicit assignments from state / localStorage
-    classCoaches.forEach(c => {
-      const sids = currentAssignments[c.id] || [];
-      sids.forEach(sid => {
-        const found = classStudents.find(s => s.id === sid);
-        if (found && !assignedStudentIds.has(sid)) {
-          map[c.id].push(found);
-          assignedStudentIds.add(sid);
-        }
-      });
+  const handleRemoveStudentFromGroup = (groupId: string, studentId: string) => {
+    const updated = assignmentGroups.map(g => {
+      if (g.id !== groupId) return g;
+      return { ...g, studentIds: g.studentIds.filter(id => id !== studentId) };
     });
+    saveAssignmentGroups(updated);
+  };
 
-    // 2. Remaining students: check default coachId or unassigned
-    classStudents.forEach(st => {
-      if (!assignedStudentIds.has(st.id)) {
-        if (classCoaches.length === 1) {
-          map[classCoaches[0].id].push(st);
-          assignedStudentIds.add(st.id);
-        } else if (st.coachId && map[st.coachId]) {
-          map[st.coachId].push(st);
-          assignedStudentIds.add(st.id);
-        } else {
-          unassigned.push(st);
-        }
+  // Modal State for Adding Coaches into a Specific Group Card
+  const [activeGroupForCoachModal, setActiveGroupForCoachModal] = useState<AssignmentGroup | null>(null);
+  const [groupSelectedCoachIds, setGroupSelectedCoachIds] = useState<string[]>([]);
+  const [groupCoachSearchQuery, setGroupCoachSearchQuery] = useState('');
+
+  const openGroupCoachModal = (group: AssignmentGroup) => {
+    setActiveGroupForCoachModal(group);
+    setGroupSelectedCoachIds([...group.coachIds]);
+    setGroupCoachSearchQuery('');
+  };
+
+  const handleConfirmGroupCoaches = () => {
+    if (!activeGroupForCoachModal) return;
+    const selectedSet = new Set(groupSelectedCoachIds);
+    const updated = assignmentGroups.map(g => {
+      if (g.id === activeGroupForCoachModal.id) {
+        return { ...g, coachIds: groupSelectedCoachIds };
       }
+      return {
+        ...g,
+        coachIds: g.coachIds.filter(id => !selectedSet.has(id))
+      };
     });
-
-    return { map, unassigned };
-  }, [classCoaches, classStudents, currentAssignments]);
-
-  const getAssignedCoachForStudent = (studentId: string): Coach | undefined => {
-    return classCoaches.find(c => coachStudentsMap.map[c.id]?.some(s => s.id === studentId));
+    saveAssignmentGroups(updated);
+    setActiveGroupForCoachModal(null);
   };
 
-  const openBatchAssignModal = (coach: Coach) => {
-    setBatchAssignCoach(coach);
-    const currentAssigned = coachStudentsMap.map[coach.id]?.map(s => s.id) || [];
-    setBatchSelectedStudentIds(currentAssigned);
-    setBatchSearchQuery('');
+  const filteredGroupCoaches = useMemo(() => {
+    const q = groupCoachSearchQuery.toLowerCase().trim();
+    return coaches.filter(c => {
+      if (!q) return true;
+      return c.name.toLowerCase().includes(q);
+    });
+  }, [coaches, groupCoachSearchQuery]);
+
+  // Modal State for Adding Students into a Specific Group Card
+  const [activeGroupForStudentModal, setActiveGroupForStudentModal] = useState<AssignmentGroup | null>(null);
+  const [groupSelectedStudentIds, setGroupSelectedStudentIds] = useState<string[]>([]);
+  const [groupStudentSearchQuery, setGroupStudentSearchQuery] = useState('');
+
+  const openGroupStudentModal = (group: AssignmentGroup) => {
+    setActiveGroupForStudentModal(group);
+    setGroupSelectedStudentIds([...group.studentIds]);
+    setGroupStudentSearchQuery('');
   };
 
-  const toggleStudentInBatch = (studentId: string) => {
-    setBatchSelectedStudentIds(prev =>
-      prev.includes(studentId)
-        ? prev.filter(id => id !== studentId)
-        : [...prev, studentId]
+  const handleConfirmGroupStudents = () => {
+    if (!activeGroupForStudentModal) return;
+    const selectedSet = new Set(groupSelectedStudentIds);
+    const updated = assignmentGroups.map(g => {
+      if (g.id === activeGroupForStudentModal.id) {
+        return { ...g, studentIds: groupSelectedStudentIds };
+      }
+      return {
+        ...g,
+        studentIds: g.studentIds.filter(id => !selectedSet.has(id))
+      };
+    });
+    saveAssignmentGroups(updated);
+    setActiveGroupForStudentModal(null);
+  };
+
+  const filteredGroupStudents = useMemo(() => {
+    if (!groupStudentSearchQuery.trim()) return classStudents;
+    const q = groupStudentSearchQuery.toLowerCase().trim();
+    return classStudents.filter(s =>
+      s.name.toLowerCase().includes(q) ||
+      (s.phone && s.phone.includes(q)) ||
+      (s.code && s.code.toLowerCase().includes(q))
     );
-  };
-
-  const handleSelectAllInBatch = () => {
-    setBatchSelectedStudentIds(classStudents.map(s => s.id));
-  };
-
-  const handleSelectUnassignedInBatch = () => {
-    const unassignedIds = coachStudentsMap.unassigned.map(s => s.id);
-    setBatchSelectedStudentIds(prev => Array.from(new Set([...prev, ...unassignedIds])));
-  };
-
-  const handleClearAllInBatch = () => {
-    setBatchSelectedStudentIds([]);
-  };
-
-  const handleConfirmBatchAssign = () => {
-    if (!batchAssignCoach) return;
-    batchAssignStudentsToCoachInClass(currentClass.id, batchAssignCoach.id, batchSelectedStudentIds);
-    setBatchAssignCoach(null);
-  };
-
-  const filteredBatchStudents = useMemo(() => {
-    if (!batchSearchQuery.trim()) return classStudents;
-    const q = batchSearchQuery.toLowerCase();
-    return classStudents.filter(s => s.name.toLowerCase().includes(q));
-  }, [classStudents, batchSearchQuery]);
+  }, [classStudents, groupStudentSearchQuery]);
 
   const handleGoAttendance = (sessionId?: string) => {
     setAttendanceTarget({
       classId: currentClass.id,
-      date: currentClass.startDate || '2026-08-28',
+      date: classDate,
       facilityId: currentClass.facilityId,
       sessionId
     });
@@ -245,6 +428,42 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
       ? currentClass.scheduleDaysText.replace(/\s*\(\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}\)/g, '').trim()
       : 'Ca học');
 
+  const isAssignedToThisClass = useMemo(() => {
+    if (!isCoach) return true;
+    const coachId = currentUser.coachId || currentUser.id;
+    return (
+      (currentClass.coaches && currentClass.coaches.some(c => c.id === currentUser.id || c.id === coachId || c.name === currentUser.name)) ||
+      currentClass.coachId === coachId ||
+      currentClass.coachName === currentUser.name ||
+      (currentClass.coachIds && (currentClass.coachIds.includes(currentUser.id) || currentClass.coachIds.includes(coachId))) ||
+      (currentUser as any).assignedClassIds?.includes(currentClass.id) ||
+      assignmentGroups.some(g => g.coachIds.includes(currentUser.id) || g.coachIds.includes(coachId))
+    );
+  }, [isCoach, currentUser, currentClass, assignmentGroups]);
+
+  if (isCoach && !isAssignedToThisClass) {
+    return (
+      <div className="max-w-2xl mx-auto p-8 bg-white rounded-3xl border border-slate-200 text-center space-y-4 shadow-xs mt-8">
+        <div className="w-14 h-14 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto">
+          <Clock className="w-7 h-7" />
+        </div>
+        <div className="space-y-1">
+          <h2 className="text-xl font-black text-slate-900">Không có quyền truy cập</h2>
+          <p className="text-sm text-slate-500 max-w-md mx-auto">
+            Bạn chưa được phân công phụ trách lớp học này. Vui lòng liên hệ Admin hoặc Quản lý cơ sở để được phân công.
+          </p>
+        </div>
+        <button
+          onClick={onBack}
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-slate-800 transition-colors cursor-pointer shadow-xs"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Quay lại danh sách lớp học</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Top Breadcrumb & Actions */}
@@ -254,15 +473,16 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
           className="inline-flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-emerald-700 bg-white hover:bg-emerald-50/60 px-4 py-2.5 rounded-xl border border-slate-200 shadow-xs transition-all self-start cursor-pointer group"
         >
           <ArrowLeft className="w-4 h-4 text-emerald-600 group-hover:-translate-x-0.5 transition-transform" />
-          <span>Quay lại danh sách ca học</span>
+          <span>{currentClass.id.startsWith('CLS_') ? 'Quay lại lịch học' : 'Quay lại danh sách lớp học'}</span>
         </button>
 
         <button
           onClick={() => handleGoAttendance()}
           className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#10B981] hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer self-start sm:self-auto"
+          title={isCoach && !isClassToday ? "Xem điểm danh ca học (Chỉ xem)" : "Điểm danh ca học"}
         >
           <CheckSquare className="w-4 h-4" />
-          <span>Điểm Danh Ca Học Này</span>
+          <span>{isCoach && !isClassToday ? 'Xem Điểm Danh Ca Này' : 'Điểm Danh Ca Học Này'}</span>
         </button>
       </div>
 
@@ -279,91 +499,84 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
             <h1 className="text-2xl sm:text-3xl font-black text-[#0F172A] tracking-tight">
               {cleanShift} • {currentClass.court}
             </h1>
-            <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-              <Clock className="w-3.5 h-3.5 text-emerald-600" />
-              {currentClass.timeSlot}
-            </span>
-            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-              Đang hoạt động
-            </span>
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-              <Users className="w-3.5 h-3.5 text-blue-600" />
-              <span>Sĩ số: {classStudents.length}/{currentClass.maxStudents || 6} HV ({remainingSlots > 0 ? `Còn ${remainingSlots} chỗ trống` : 'Đã đủ sĩ số'})</span>
-            </span>
           </div>
 
-          {/* Pre-session Reminder Note for Coach */}
-          {currentClass.preSessionNote && !isEditingNote && (
-            <div className="p-3.5 bg-amber-50/90 border border-amber-200/90 rounded-2xl flex items-start justify-between gap-3 text-xs text-amber-950 max-w-3xl shadow-2xs">
-              <div className="flex items-start gap-2.5">
-                <MessageSquare className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-extrabold text-amber-900">Nhắc nhở riêng cho HLV: </span>
-                  <span className="font-medium text-amber-950">{currentClass.preSessionNote}</span>
+          {/* Pre-session Reminder Note for Coach - Chỉ hiển thị với những lớp chưa diễn ra */}
+          {isClassUpcoming && (
+            <>
+              {currentClass.preSessionNote && !isEditingNote && (
+                <div className="p-3.5 bg-amber-50/90 border border-amber-200/90 rounded-2xl flex items-start justify-between gap-3 text-xs text-amber-950 max-w-3xl shadow-2xs">
+                  <div className="flex items-start gap-2.5">
+                    <MessageSquare className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-extrabold text-amber-900">Nhắc nhở riêng cho HLV: </span>
+                      <span className="font-medium text-amber-950">{currentClass.preSessionNote}</span>
+                    </div>
+                  </div>
+                  {canManageNote && (
+                    <button
+                      onClick={() => {
+                        setDetailNoteInput(currentClass.preSessionNote || '');
+                        setIsEditingNote(true);
+                      }}
+                      className="text-amber-800 hover:text-amber-950 font-bold text-xs underline shrink-0 cursor-pointer"
+                    >
+                      Chỉnh sửa
+                    </button>
+                  )}
                 </div>
-              </div>
-              {canManageNote && (
-                <button
-                  onClick={() => {
-                    setDetailNoteInput(currentClass.preSessionNote || '');
-                    setIsEditingNote(true);
-                  }}
-                  className="text-amber-800 hover:text-amber-950 font-bold text-xs underline shrink-0 cursor-pointer"
-                >
-                  Chỉnh sửa
-                </button>
               )}
-            </div>
-          )}
 
-          {!currentClass.preSessionNote && !isEditingNote && canManageNote && (
-            <div>
-              <button
-                onClick={() => {
-                  setDetailNoteInput('');
-                  setIsEditingNote(true);
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
-              >
-                <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
-                <span>+ Nhắc nhở riêng cho HLV</span>
-              </button>
-            </div>
-          )}
+              {!currentClass.preSessionNote && !isEditingNote && canManageNote && (
+                <div>
+                  <button
+                    onClick={() => {
+                      setDetailNoteInput('');
+                      setIsEditingNote(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
+                    <span>+ Nhắc nhở riêng cho HLV</span>
+                  </button>
+                </div>
+              )}
 
-          {isEditingNote && (
-            <div className="p-3.5 bg-amber-50/90 border border-amber-300 rounded-2xl space-y-2.5 max-w-2xl">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
-                <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
-                <span>Nhắc nhở dặn dò HLV trước ca dạy:</span>
-              </div>
-              <textarea
-                rows={2}
-                value={detailNoteInput}
-                onChange={e => setDetailNoteInput(e.target.value)}
-                placeholder="Nhập dặn dò riêng cho HLV (bài tập, tình trạng sân, học viên...)"
-                className="w-full p-2.5 bg-white text-xs text-slate-800 rounded-xl border border-amber-200 outline-none focus:border-amber-500"
-              />
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsEditingNote(false)}
-                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    updateDailyClassNote(currentClass.id, detailNoteInput);
-                    setIsEditingNote(false);
-                  }}
-                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
-                >
-                  Lưu nhắc nhở HLV
-                </button>
-              </div>
-            </div>
+              {isEditingNote && (
+                <div className="p-3.5 bg-amber-50/90 border border-amber-300 rounded-2xl space-y-2.5 max-w-2xl">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                    <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Nhắc nhở dặn dò HLV trước ca dạy:</span>
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={detailNoteInput}
+                    onChange={e => setDetailNoteInput(e.target.value)}
+                    placeholder="Nhập dặn dò riêng cho HLV (bài tập, tình trạng sân, học viên...)"
+                    className="w-full p-2.5 bg-white text-xs text-slate-800 rounded-xl border border-amber-200 outline-none focus:border-amber-500"
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingNote(false)}
+                      className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateDailyClassNote(currentClass.id, detailNoteInput);
+                        setIsEditingNote(false);
+                      }}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+                    >
+                      Lưu nhắc nhở HLV
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -376,86 +589,31 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
                 Huấn Luyện Viên Phụ Trách ({classCoaches.length})
               </span>
             </div>
-            {canManage && studentViewMode === 'by_coach' && (
-              <span className="text-[11px] font-medium text-slate-400 hidden sm:inline">
-                💡 Kéo thả học viên trực tiếp vào thẻ HLV để phân công
-              </span>
-            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {classCoaches.length > 0 ? (
-              classCoaches.map((c: Coach) => {
-                const count = coachStudentsMap.map[c.id]?.length || 0;
-                const isOver = studentViewMode === 'by_coach' && dragOverTargetId === c.id;
-
-                return (
-                  <div
-                    key={c.id}
-                    data-drop-target={studentViewMode === 'by_coach' ? c.id : undefined}
-                    onDragOver={(e) => {
-                      if (!canManage || studentViewMode !== 'by_coach') return;
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = 'move';
-                      if (dragOverTargetId !== c.id) setDragOverTargetId(c.id);
-                    }}
-                    onDragLeave={(e) => {
-                      if (!canManage || studentViewMode !== 'by_coach') return;
-                      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-                      if (dragOverTargetId === c.id) setDragOverTargetId(null);
-                    }}
-                    onDrop={(e) => {
-                      if (!canManage || studentViewMode !== 'by_coach') return;
-                      e.preventDefault();
-                      const sId = e.dataTransfer.getData('text/plain') || draggedStudentId;
-                      if (sId) {
-                        assignStudentToCoachInClass(currentClass.id, sId, c.id);
-                      }
-                      setDragOverTargetId(null);
-                      setDraggedStudentId(null);
-                    }}
-                    className={`flex items-center gap-3 p-3 rounded-2xl border transition-all shadow-2xs ${
-                      isOver
-                        ? 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-500 shadow-md scale-[1.02]'
-                        : 'bg-slate-50/90 hover:bg-slate-100/80 border-slate-200/80'
-                    }`}
-                  >
-                    {c.avatar ? (
-                      <img
-                        src={c.avatar}
-                        alt={c.name}
-                        className="w-10 h-10 rounded-xl object-cover border border-slate-200 shrink-0"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white font-bold text-sm flex items-center justify-center shrink-0">
-                        {c.name.charAt(0)}
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-extrabold text-[#0F172A] truncate">HLV {c.name}</div>
-                      {studentViewMode === 'by_coach' && (
-                        <div className="text-[11px] font-semibold text-emerald-600 mt-0.5">
-                          {count} học viên kèm cặp
-                        </div>
-                      )}
+              classCoaches.map((c: Coach) => (
+                <div
+                  key={c.id}
+                  className="flex items-center gap-3 p-3 rounded-2xl border transition-all shadow-2xs bg-slate-50/90 hover:bg-slate-100/80 border-slate-200/80"
+                >
+                  {c.avatar ? (
+                    <img
+                      src={c.avatar}
+                      alt={c.name}
+                      className="w-10 h-10 rounded-xl object-cover border border-slate-200 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white font-bold text-sm flex items-center justify-center shrink-0">
+                      {c.name.charAt(0)}
                     </div>
-
-                    {canManage && studentViewMode === 'by_coach' && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openBatchAssignModal(c);
-                        }}
-                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all cursor-pointer shadow-2xs shrink-0"
-                        title={`Thêm nhiều học viên cho HLV ${c.name}`}
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-extrabold text-[#0F172A] truncate">{c.name}</div>
                   </div>
-                );
-              })
+                </div>
+              ))
             ) : (
               <div className="p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-xs text-amber-700 font-medium">
                 Chưa có Huấn luyện viên phụ trách ca học này.
@@ -476,11 +634,6 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
               <h2 className="font-extrabold text-base text-[#0F172A]">
                 {studentViewMode === 'list' ? 'Danh Sách Học Viên Trong Ca' : 'Phân Công Học Viên Theo Huấn Luyện Viên'}
               </h2>
-              <p className="text-xs text-slate-500">
-                {studentViewMode === 'list'
-                  ? 'Danh sách học viên theo học trong ca này'
-                  : 'Kéo và thả học viên để chỉ định Huấn luyện viên kèm cặp trong ca học'}
-              </p>
             </div>
           </div>
 
@@ -515,22 +668,40 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
             <span className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-xs font-bold shrink-0">
               {classStudents.length} học viên theo học
             </span>
+
+            {canManage && studentViewMode === 'by_coach' && (
+              <button
+                type="button"
+                onClick={handleAddGroup}
+                className="px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs shrink-0"
+                title="Tạo thêm nhóm phân công mới"
+              >
+                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>Thêm nhóm</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Instructional Tip (Only when in by_coach mode) */}
-        {canManage && classCoaches.length > 0 && studentViewMode === 'by_coach' && (
-          <div className="flex items-center gap-2.5 p-3 bg-emerald-50/80 text-emerald-900 rounded-2xl text-xs border border-emerald-200/80 shadow-2xs">
-            <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>
-              Kéo thả học viên giữa các ô HLV để phân nhóm. Trên điện thoại: Giữ <strong>⠿</strong> để kéo hoặc chạm trực tiếp để đổi HLV.
-            </span>
-          </div>
-        )}
-
         {classStudents.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 text-sm bg-slate-50/60 rounded-2xl border border-dashed border-slate-200">
-            Chưa có học viên nào đăng ký ca học này.
+          <div className="p-8 text-center text-slate-400 text-sm bg-slate-50/60 rounded-2xl border border-dashed border-slate-200 space-y-3">
+            <div>Chưa có học viên nào trong ca học này.</div>
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (assignmentGroups.length > 0) {
+                    openGroupStudentModal(assignmentGroups[0]);
+                  } else {
+                    handleAddGroup();
+                  }
+                }}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                Thêm học viên vào ca
+              </button>
+            )}
           </div>
         ) : studentViewMode === 'list' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -560,311 +731,292 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Unassigned Students Lane (if any) */}
-            {coachStudentsMap.unassigned.length > 0 && (
-              <div
-                data-drop-target="unassigned"
-                onDragOver={(e) => {
-                  if (!canManage) return;
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                  if (dragOverTargetId !== 'unassigned') setDragOverTargetId('unassigned');
-                }}
-                onDragLeave={(e) => {
-                  if (!canManage) return;
-                  if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-                  if (dragOverTargetId === 'unassigned') setDragOverTargetId(null);
-                }}
-                onDrop={(e) => {
-                  if (!canManage) return;
-                  e.preventDefault();
-                  const sId = e.dataTransfer.getData('text/plain') || draggedStudentId;
-                  if (sId) {
-                    assignStudentToCoachInClass(currentClass.id, sId, null);
-                  }
-                  setDragOverTargetId(null);
-                  setDraggedStudentId(null);
-                }}
-                className={`p-4 rounded-2xl border transition-all ${
-                  dragOverTargetId === 'unassigned'
-                    ? 'bg-amber-50/90 border-amber-400 ring-2 ring-amber-400/50'
-                    : 'bg-amber-50/40 border-amber-200/80'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                    <span className="text-xs font-extrabold text-amber-900 uppercase tracking-wide">
-                      Chưa Phân Công HLV ({coachStudentsMap.unassigned.length})
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-amber-700 font-medium hidden sm:inline">
-                    Kéo học viên vào HLV mong muốn bên dưới để phân công
-                  </span>
+
+
+            {/* Coaching Group Cards Grid */}
+            {assignmentGroups.length === 0 ? (
+              canManage && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={handleAddGroup}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4 stroke-[2.5]" />
+                    <span>Tạo nhóm</span>
+                  </button>
                 </div>
+              )
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {assignmentGroups.map((group) => {
+                const groupCoaches = group.coachIds
+                  .map(cid => coaches.find(c => c.id === cid))
+                  .filter((c): c is Coach => Boolean(c));
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
-                  {coachStudentsMap.unassigned.map(student => (
-                    <div
-                      key={student.id}
-                      draggable={canManage}
-                      onDragStart={(e) => {
-                        if (!canManage) return;
-                        e.dataTransfer.setData('text/plain', student.id);
-                        e.dataTransfer.effectAllowed = 'move';
-                        setDraggedStudentId(student.id);
-                      }}
-                      onDragEnd={() => {
-                        setDraggedStudentId(null);
-                        setDragOverTargetId(null);
-                      }}
-                      onClick={() => {
-                        if (canManage && classCoaches.length > 0) {
-                          setReassignModalStudent(student);
-                        }
-                      }}
-                      className={`group flex items-center justify-between gap-2.5 p-2.5 bg-white rounded-xl border transition-all select-none cursor-pointer sm:cursor-grab active:cursor-grabbing ${
-                        draggedStudentId === student.id
-                          ? 'opacity-40 scale-95 border-dashed border-emerald-400 bg-emerald-50/40 shadow-none'
-                          : 'border-slate-200/90 hover:border-emerald-300 hover:shadow-xs'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        {canManage && (
-                          <div
-                            onTouchStart={(e) => {
-                              e.stopPropagation();
-                              handleTouchStart(student, e);
-                            }}
-                            onTouchMove={handleTouchMove}
-                            onTouchEnd={handleTouchEnd}
-                            onTouchCancel={handleTouchEnd}
-                            className="p-2 -m-1 sm:p-1 sm:m-0 touch-none cursor-grab active:cursor-grabbing text-slate-400 group-hover:text-emerald-600 active:text-emerald-700 active:bg-emerald-50 rounded-lg transition-colors shrink-0"
-                            title="Giữ để kéo thả"
-                          >
-                            <GripVertical className="w-3.5 h-3.5" />
-                          </div>
-                        )}
-                        {student.avatar ? (
-                          <img
-                            src={student.avatar}
-                            alt={student.name}
-                            className="w-8 h-8 rounded-lg object-cover border border-slate-200 shrink-0"
-                          />
-                        ) : (
-                          <div className="w-8 h-8 rounded-lg bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                            {student.name.charAt(0)}
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs font-bold text-[#0F172A] truncate group-hover:text-emerald-700 transition-colors">
-                            {student.name}
-                          </div>
-                        </div>
-                      </div>
+                const groupStudents = group.studentIds
+                  .map(sid => students.find(s => s.id === sid))
+                  .filter((s): s is Student => Boolean(s));
 
-                      {canManage && classCoaches.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setReassignModalStudent(student);
-                          }}
-                          className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 sm:bg-transparent sm:text-slate-400 sm:opacity-0 sm:group-hover:opacity-100 hover:text-emerald-600 hover:bg-slate-100 transition-all cursor-pointer shrink-0"
-                          title="Chọn HLV"
-                        >
-                          <ArrowRightLeft className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Coach Columns / Drop Zones */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {classCoaches.map((coach: Coach) => {
-                const assignedStudents = coachStudentsMap.map[coach.id] || [];
-                const isOver = dragOverTargetId === coach.id;
+                const isOver = dragOverTargetId === group.id;
 
                 return (
                   <div
-                    key={coach.id}
-                    data-drop-target={coach.id}
+                    key={group.id}
+                    data-drop-target={group.id}
                     onDragOver={(e) => {
                       if (!canManage) return;
                       e.preventDefault();
                       e.dataTransfer.dropEffect = 'move';
-                      if (dragOverTargetId !== coach.id) setDragOverTargetId(coach.id);
+                      if (dragOverTargetId !== group.id) setDragOverTargetId(group.id);
                     }}
                     onDragLeave={(e) => {
                       if (!canManage) return;
                       if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-                      if (dragOverTargetId === coach.id) setDragOverTargetId(null);
+                      if (dragOverTargetId === group.id) setDragOverTargetId(null);
                     }}
                     onDrop={(e) => {
                       if (!canManage) return;
                       e.preventDefault();
                       const sId = e.dataTransfer.getData('text/plain') || draggedStudentId;
                       if (sId) {
-                        assignStudentToCoachInClass(currentClass.id, sId, coach.id);
+                        handleDropStudent(sId, group.id);
                       }
                       setDragOverTargetId(null);
                       setDraggedStudentId(null);
                     }}
-                    className={`rounded-2xl border p-4 flex flex-col transition-all min-h-[160px] ${
+                    className={`rounded-2xl border p-4 flex flex-col transition-all min-h-[200px] ${
                       isOver
                         ? 'bg-emerald-50/90 border-emerald-500 ring-2 ring-emerald-400 shadow-md scale-[1.01]'
                         : 'bg-slate-50/70 hover:bg-slate-50 border-slate-200/90'
                     }`}
                   >
-                    {/* Column Header */}
+                    {/* Card Header */}
                     <div className="flex items-center justify-between gap-2.5 pb-3 border-b border-slate-200/80 mb-3">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        {coach.avatar ? (
-                          <img
-                            src={coach.avatar}
-                            alt={coach.name}
-                            className="w-8 h-8 rounded-lg object-cover border border-slate-200 shrink-0"
-                          />
-                        ) : (
-                          <div className="w-8 h-8 rounded-lg bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                            {coach.name.charAt(0)}
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          <h3 className="text-xs font-black text-[#0F172A] truncate">
-                            HLV {coach.name}
-                          </h3>
-                        </div>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
+                        <h3 className="text-xs font-black text-[#0F172A] truncate">
+                          {group.name}
+                        </h3>
+                        <span className="text-[11px] font-semibold text-slate-400 shrink-0">
+                          ({groupCoaches.length} HLV • {groupStudents.length} HV)
+                        </span>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="px-2.5 py-0.5 bg-emerald-100/80 text-emerald-800 text-[11px] font-bold rounded-full border border-emerald-200">
-                          {assignedStudents.length} học viên
-                        </span>
+                      {canManage && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteGroup(group.id)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          title={`Xóa ${group.name}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Sub-section 1: Huấn luyện viên phụ trách */}
+                    <div className="space-y-2 mb-3 bg-white/70 p-2.5 rounded-xl border border-slate-200/60">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+                          <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>HLV Phụ Trách ({groupCoaches.length})</span>
+                        </div>
                         {canManage && (
                           <button
                             type="button"
-                            onClick={() => openBatchAssignModal(coach)}
-                            className="p-1 px-2 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white border border-emerald-200 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
-                            title={`Thêm học viên cho HLV ${coach.name}`}
+                            onClick={() => openGroupCoachModal(group)}
+                            className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white border border-emerald-200 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                            title="Thêm hoặc chọn Huấn luyện viên cho nhóm này"
                           >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span className="text-[11px]">Thêm</span>
+                            <Plus className="w-3 h-3" />
+                            <span>Thêm HLV</span>
                           </button>
                         )}
                       </div>
-                    </div>
 
-                    {/* Drop Zone Area / Student List */}
-                    <div className="flex-1 space-y-2">
-                      {assignedStudents.length === 0 ? (
-                        <div className={`py-4 px-3 rounded-xl border border-dashed flex flex-col items-center justify-center text-center transition-colors ${
-                          isOver
-                            ? 'border-emerald-500 bg-emerald-100/50 text-emerald-700'
-                            : 'border-slate-200 text-slate-400'
-                        }`}>
-                          <UserCheck className="w-5 h-5 mb-1 opacity-50" />
-                          <span className="text-xs font-semibold">
-                            {isOver ? 'Thả vào đây để phân công' : 'Chưa có học viên'}
-                          </span>
-                          <span className="text-[10px] opacity-75 mt-0.5">
-                            Kéo thả học viên vào đây
-                          </span>
-                          {canManage && (
-                            <button
-                              type="button"
-                              onClick={() => openBatchAssignModal(coach)}
-                              className="mt-2.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white border border-emerald-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              Thêm học viên
-                            </button>
-                          )}
+                      {/* Coaches List in Group - ONLY Avatar + Name */}
+                      {groupCoaches.length === 0 ? (
+                        <div className="py-2 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-lg">
+                          Chưa có HLV cho nhóm này
                         </div>
                       ) : (
-                        assignedStudents.map(student => (
-                          <div
-                            key={student.id}
-                            draggable={canManage}
-                            onDragStart={(e) => {
-                              if (!canManage) return;
-                              e.dataTransfer.setData('text/plain', student.id);
-                              e.dataTransfer.effectAllowed = 'move';
-                              setDraggedStudentId(student.id);
-                            }}
-                            onDragEnd={() => {
-                              setDraggedStudentId(null);
-                              setDragOverTargetId(null);
-                            }}
-                            onClick={() => {
-                              if (canManage && classCoaches.length > 0) {
-                                setReassignModalStudent(student);
-                              }
-                            }}
-                            className={`group flex items-center justify-between gap-2.5 p-2.5 bg-white rounded-xl border transition-all select-none cursor-pointer sm:cursor-grab active:cursor-grabbing ${
-                              draggedStudentId === student.id
-                                ? 'opacity-40 scale-95 border-dashed border-emerald-400 bg-emerald-50/40 shadow-none'
-                                : 'border-slate-200/90 hover:border-emerald-300 hover:shadow-xs'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                              {canManage && (
-                                <div
-                                  onTouchStart={(e) => {
-                                    e.stopPropagation();
-                                    handleTouchStart(student, e);
-                                  }}
-                                  onTouchMove={handleTouchMove}
-                                  onTouchEnd={handleTouchEnd}
-                                  onTouchCancel={handleTouchEnd}
-                                  className="p-2 -m-1 sm:p-1 sm:m-0 touch-none cursor-grab active:cursor-grabbing text-slate-400 group-hover:text-emerald-600 active:text-emerald-700 active:bg-emerald-50 rounded-lg transition-colors shrink-0"
-                                  title="Giữ để kéo thả"
-                                >
-                                  <GripVertical className="w-3.5 h-3.5" />
-                                </div>
-                              )}
-                              {student.avatar ? (
-                                <img
-                                  src={student.avatar}
-                                  alt={student.name}
-                                  className="w-8 h-8 rounded-lg object-cover border border-slate-200 shrink-0"
-                                />
+                        <div className="flex flex-wrap gap-1.5">
+                          {groupCoaches.map(c => (
+                            <div
+                              key={c.id}
+                              className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg shadow-2xs"
+                            >
+                              {c.avatar ? (
+                                <img src={c.avatar} alt={c.name} className="w-5 h-5 rounded-md object-cover border border-slate-200 shrink-0" />
                               ) : (
-                                <div className="w-8 h-8 rounded-lg bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                                  {student.name.charAt(0)}
+                                <div className="w-5 h-5 rounded-md bg-emerald-500 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
+                                  {c.name.charAt(0)}
                                 </div>
                               )}
-                              <div className="min-w-0 flex-1">
-                                <div className="text-xs font-bold text-[#0F172A] truncate group-hover:text-emerald-700 transition-colors">
-                                  {student.name}
+                              <span className="text-xs font-bold text-slate-800">{c.name}</span>
+                              {canManage && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveCoachFromGroup(group.id, c.id)}
+                                  className="text-slate-400 hover:text-rose-600 p-0.5 rounded transition-colors ml-0.5 cursor-pointer"
+                                  title={`Xóa ${c.name} khỏi nhóm`}
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Sub-section 2: Học viên kèm cặp */}
+                    <div className="flex-1 flex flex-col space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+                          <Users className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Học Viên Kèm Cặp ({groupStudents.length})</span>
+                        </div>
+                        {canManage && (
+                          <button
+                            type="button"
+                            onClick={() => openGroupStudentModal(group)}
+                            className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white border border-emerald-200 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                            title="Thêm học viên vào nhóm này"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Thêm học viên</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Drop Zone Area / Student List */}
+                      <div className="flex-1 space-y-1.5 min-h-[60px]">
+                        {groupStudents.length === 0 ? (
+                          <div className={`py-4 px-3 rounded-xl border border-dashed flex flex-col items-center justify-center text-center transition-colors ${
+                            isOver
+                              ? 'border-emerald-500 bg-emerald-100/50 text-emerald-700'
+                              : 'border-slate-200 text-slate-400'
+                          }`}>
+                            <span className="text-xs font-semibold">
+                              {isOver ? 'Thả vào đây để phân công' : 'Chưa có học viên nào'}
+                            </span>
+                          </div>
+                        ) : (
+                          groupStudents.map(student => (
+                            <div
+                              key={student.id}
+                              draggable={canManage}
+                              onDragStart={(e) => {
+                                if (!canManage) return;
+                                e.dataTransfer.setData('text/plain', student.id);
+                                e.dataTransfer.effectAllowed = 'move';
+                                setDraggedStudentId(student.id);
+                              }}
+                              onDragEnd={() => {
+                                setDraggedStudentId(null);
+                                setDragOverTargetId(null);
+                              }}
+                              onClick={() => {
+                                if (canManage) {
+                                  setReassignModalStudent(student);
+                                }
+                              }}
+                              className={`group flex items-center justify-between gap-2.5 p-2 bg-white rounded-xl border transition-all select-none cursor-pointer sm:cursor-grab active:cursor-grabbing ${
+                                draggedStudentId === student.id
+                                  ? 'opacity-40 scale-95 border-dashed border-emerald-400 bg-emerald-50/40 shadow-none'
+                                  : 'border-slate-200/90 hover:border-emerald-300 hover:shadow-xs'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                {canManage && (
+                                  <div
+                                    onTouchStart={(e) => {
+                                      e.stopPropagation();
+                                      handleTouchStart(student, e);
+                                    }}
+                                    onTouchMove={handleTouchMove}
+                                    onTouchEnd={handleTouchEnd}
+                                    onTouchCancel={handleTouchEnd}
+                                    className="p-1 -m-1 sm:p-0 sm:m-0 touch-none cursor-grab active:cursor-grabbing text-slate-400 group-hover:text-emerald-600 rounded shrink-0"
+                                    title="Giữ để kéo thả"
+                                  >
+                                    <GripVertical className="w-3.5 h-3.5" />
+                                  </div>
+                                )}
+                                {student.avatar ? (
+                                  <img
+                                    src={student.avatar}
+                                    alt={student.name}
+                                    className="w-7 h-7 rounded-lg object-cover border border-slate-200 shrink-0"
+                                  />
+                                ) : (
+                                  <div className="w-7 h-7 rounded-lg bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                                    {student.name.charAt(0)}
+                                  </div>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs font-bold text-[#0F172A] truncate group-hover:text-emerald-700 transition-colors">
+                                    {student.name}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
 
-                            {canManage && classCoaches.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setReassignModalStudent(student);
-                                }}
-                                className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 sm:bg-transparent sm:text-slate-400 sm:opacity-0 sm:group-hover:opacity-100 hover:text-emerald-600 hover:bg-slate-100 transition-all cursor-pointer shrink-0"
-                                title="Đổi Huấn luyện viên"
-                              >
-                                <ArrowRightLeft className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        ))
-                      )}
+                              {canManage && (
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {assignmentGroups.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setReassignModalStudent(student);
+                                      }}
+                                      className="p-1 rounded-lg bg-emerald-50 text-emerald-700 sm:bg-transparent sm:text-slate-400 sm:opacity-0 sm:group-hover:opacity-100 hover:text-emerald-600 hover:bg-slate-100 transition-all cursor-pointer"
+                                      title="Đổi nhóm"
+                                    >
+                                      <ArrowRightLeft className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveStudentFromGroup(group.id, student.id);
+                                    }}
+                                    className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                    title="Chuyển về Chưa phân công"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
               })}
+
+              {/* Add Group Dashed Card */}
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={handleAddGroup}
+                  className="rounded-2xl border-2 border-dashed border-slate-200 hover:border-emerald-400 bg-slate-50/50 hover:bg-emerald-50/30 p-6 flex flex-col items-center justify-center text-center transition-all cursor-pointer min-h-[200px] group"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white flex items-center justify-center transition-colors mb-2 shadow-2xs">
+                    <Plus className="w-5 h-5 stroke-[2.5]" />
+                  </div>
+                  <div className="text-xs font-bold text-slate-700 group-hover:text-emerald-700 transition-colors">
+                    Thêm nhóm phân công mới
+                  </div>
+                </button>
+              )}
             </div>
+          )}
           </div>
         )}
       </div>
@@ -898,45 +1050,59 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
       <Modal
         isOpen={Boolean(reassignModalStudent)}
         onClose={() => setReassignModalStudent(null)}
-        title="Chuyển Huấn Luyện Viên Cho Học Viên"
+        title="Chuyển Nhóm Cho Học Viên"
         subtitle={reassignModalStudent ? `Học viên: ${reassignModalStudent.name}` : ''}
       >
         <div className="space-y-3">
           <p className="text-xs text-slate-600 font-medium">
-            Chọn Huấn luyện viên phụ trách kèm cặp học viên này trong ca:
+            Chọn nhóm phân công cho học viên này trong ca:
           </p>
           <div className="space-y-2">
-            {classCoaches.map((c: Coach) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => {
-                  if (reassignModalStudent) {
-                    assignStudentToCoachInClass(currentClass.id, reassignModalStudent.id, c.id);
-                    setReassignModalStudent(null);
-                  }
-                }}
-                className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/50 transition-all cursor-pointer text-left"
-              >
-                <div className="flex items-center gap-3">
-                  {c.avatar ? (
-                    <img src={c.avatar} alt={c.name} className="w-8 h-8 rounded-lg object-cover" />
-                  ) : (
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500 text-white font-bold text-xs flex items-center justify-center">
-                      {c.name.charAt(0)}
+            {assignmentGroups.map((grp) => {
+              const grpCoaches = grp.coachIds
+                .map(cid => coaches.find(c => c.id === cid))
+                .filter((c): c is Coach => Boolean(c));
+              const isCurrentGroup = grp.studentIds.includes(reassignModalStudent?.id || '');
+
+              return (
+                <button
+                  key={grp.id}
+                  type="button"
+                  onClick={() => {
+                    if (reassignModalStudent) {
+                      handleDropStudent(reassignModalStudent.id, grp.id);
+                      setReassignModalStudent(null);
+                    }
+                  }}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer text-left ${
+                    isCurrentGroup
+                      ? 'border-emerald-500 bg-emerald-50/60 ring-1 ring-emerald-500'
+                      : 'border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/50'
+                  }`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-slate-800">{grp.name}</span>
+                      <span className="text-[11px] text-slate-500">({grp.studentIds.length} học viên)</span>
                     </div>
-                  )}
-                  <span className="font-bold text-xs text-slate-800">HLV {c.name}</span>
-                </div>
-                <span className="text-[11px] text-emerald-700 font-semibold">Chọn HLV này</span>
-              </button>
-            ))}
+                    <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                      {grpCoaches.length > 0
+                        ? grpCoaches.map(c => c.name).join(', ')
+                        : 'Chưa có HLV'}
+                    </div>
+                  </div>
+                  <span className="text-[11px] text-emerald-700 font-semibold shrink-0 ml-2">
+                    {isCurrentGroup ? 'Đang ở nhóm này' : 'Chuyển vào nhóm'}
+                  </span>
+                </button>
+              );
+            })}
 
             <button
               type="button"
               onClick={() => {
                 if (reassignModalStudent) {
-                  assignStudentToCoachInClass(currentClass.id, reassignModalStudent.id, null);
+                  handleDropStudent(reassignModalStudent.id, null);
                   setReassignModalStudent(null);
                 }
               }}
@@ -944,18 +1110,179 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
             >
               Chuyển về Chưa phân công
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (reassignModalStudent) {
+                  if (window.confirm(`Bạn có chắc muốn xóa học viên ${reassignModalStudent.name} khỏi ca học này?`)) {
+                    handleDropStudent(reassignModalStudent.id, null);
+                    removeStudentFromDailyClass(currentClass.id, reassignModalStudent.id);
+                    setReassignModalStudent(null);
+                  }
+                }
+              }}
+              className="w-full p-2.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 transition-all text-xs font-semibold cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Xóa khỏi ca học này</span>
+            </button>
           </div>
         </div>
       </Modal>
 
-      {/* Batch Assign Students Modal */}
+      {/* Modal: Add Coaches into a Specific Card */}
       <Modal
-        isOpen={Boolean(batchAssignCoach)}
-        onClose={() => setBatchAssignCoach(null)}
-        title={batchAssignCoach ? `Thêm & Phân Công Học Viên - HLV ${batchAssignCoach.name}` : ''}
-        subtitle="Chọn nhiều học viên để HLV này trực tiếp kèm cặp trong ca học"
+        isOpen={Boolean(activeGroupForCoachModal)}
+        onClose={() => setActiveGroupForCoachModal(null)}
+        title={activeGroupForCoachModal ? `Thêm Huấn Luyện Viên - ${activeGroupForCoachModal.name}` : ''}
+        subtitle="Chọn các Huấn luyện viên tham gia phụ trách nhóm này"
       >
-        {batchAssignCoach && (
+        {activeGroupForCoachModal && (
+          <div className="space-y-4">
+            <div className="space-y-2.5">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={groupCoachSearchQuery}
+                  onChange={(e) => setGroupCoachSearchQuery(e.target.value)}
+                  placeholder="Tìm kiếm Huấn luyện viên theo tên..."
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setGroupSelectedCoachIds(coaches.map(c => c.id))}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
+                  >
+                    Chọn tất cả ({coaches.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGroupSelectedCoachIds([])}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    Bỏ chọn
+                  </button>
+                </div>
+                <span>
+                  Đã chọn: <strong className="text-emerald-700 font-bold">{groupSelectedCoachIds.length}</strong> HLV
+                </span>
+              </div>
+            </div>
+
+            {/* List of Coaches: Avatar + Name ONLY */}
+            <div className="max-h-72 overflow-y-auto space-y-2 pr-1 border border-slate-200/90 rounded-2xl p-2 bg-slate-50/50">
+              {filteredGroupCoaches.length === 0 ? (
+                <div className="p-6 text-center text-slate-400 text-xs">
+                  Không tìm thấy Huấn luyện viên nào phù hợp.
+                </div>
+              ) : (
+                filteredGroupCoaches.map(coach => {
+                  const isChecked = groupSelectedCoachIds.includes(coach.id);
+                  const otherGroup = assignmentGroups.find(
+                    g => g.id !== activeGroupForCoachModal?.id && g.coachIds.includes(coach.id)
+                  );
+                  const isInThisGroup = activeGroupForCoachModal?.coachIds.includes(coach.id);
+
+                  return (
+                    <div
+                      key={coach.id}
+                      onClick={() => {
+                        setGroupSelectedCoachIds(prev =>
+                          prev.includes(coach.id) ? prev.filter(id => id !== coach.id) : [...prev, coach.id]
+                        );
+                      }}
+                      className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
+                        isChecked
+                          ? 'bg-emerald-50/90 border-emerald-400 shadow-2xs'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-colors shrink-0 ${
+                          isChecked
+                            ? 'bg-emerald-600 border-emerald-600 text-white'
+                            : 'border-slate-300 bg-white'
+                        }`}>
+                          {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                        </div>
+
+                        {coach.avatar ? (
+                          <img
+                            src={coach.avatar}
+                            alt={coach.name}
+                            className="w-9 h-9 rounded-xl object-cover border border-slate-200 shrink-0"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-xl bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                            {coach.name.charAt(0)}
+                          </div>
+                        )}
+
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-bold text-[#0F172A] truncate">
+                            {coach.name}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0">
+                        {isInThisGroup ? (
+                          <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-md border border-emerald-200">
+                            Đang trong nhóm này
+                          </span>
+                        ) : otherGroup ? (
+                          <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                            Đang ở {otherGroup.name}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100">
+              <span className="text-xs text-slate-500 font-medium">
+                Đã chọn: <strong className="text-emerald-700 font-bold">{groupSelectedCoachIds.length}</strong> HLV
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveGroupForCoachModal(null)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmGroupCoaches}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  Lưu HLV cho nhóm ({groupSelectedCoachIds.length})
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal: Add Students into a Specific Card */}
+      <Modal
+        isOpen={Boolean(activeGroupForStudentModal)}
+        onClose={() => setActiveGroupForStudentModal(null)}
+        title={activeGroupForStudentModal ? `Thêm Học Viên - ${activeGroupForStudentModal.name}` : ''}
+        subtitle="Chọn các học viên để phân công vào nhóm này"
+      >
+        {activeGroupForStudentModal && (
           <div className="space-y-4">
             {/* Search & Quick Actions */}
             <div className="space-y-2.5">
@@ -963,34 +1290,36 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
-                  value={batchSearchQuery}
-                  onChange={(e) => setBatchSearchQuery(e.target.value)}
-                  placeholder="Tìm kiếm học viên theo tên..."
+                  value={groupStudentSearchQuery}
+                  onChange={(e) => setGroupStudentSearchQuery(e.target.value)}
+                  placeholder="Tìm kiếm học viên theo tên, mã..."
                   className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
                 />
               </div>
 
-              {/* Quick filter action buttons */}
               <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={handleSelectAllInBatch}
+                  onClick={() => setGroupSelectedStudentIds(classStudents.map(s => s.id))}
                   className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
                 >
                   Chọn tất cả ({classStudents.length})
                 </button>
-                {coachStudentsMap.unassigned.length > 0 && (
+                {unassignedStudents.length > 0 && (
                   <button
                     type="button"
-                    onClick={handleSelectUnassignedInBatch}
+                    onClick={() => {
+                      const unassignedIds = unassignedStudents.map(s => s.id);
+                      setGroupSelectedStudentIds(prev => Array.from(new Set([...prev, ...unassignedIds])));
+                    }}
                     className="px-2.5 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-bold transition-colors cursor-pointer"
                   >
-                    + Chọn tất cả chưa phân công ({coachStudentsMap.unassigned.length})
+                    Chọn chưa phân công ({unassignedStudents.length})
                   </button>
                 )}
                 <button
                   type="button"
-                  onClick={handleClearAllInBatch}
+                  onClick={() => setGroupSelectedStudentIds([])}
                   className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 text-[11px] font-medium transition-colors cursor-pointer"
                 >
                   Bỏ chọn
@@ -998,22 +1327,28 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
               </div>
             </div>
 
-            {/* Students Checkbox List */}
+            {/* Student Checkbox List */}
             <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1 border border-slate-200/90 rounded-2xl p-2 bg-slate-50/50">
-              {filteredBatchStudents.length === 0 ? (
+              {filteredGroupStudents.length === 0 ? (
                 <div className="p-6 text-center text-slate-400 text-xs">
                   Không tìm thấy học viên nào phù hợp.
                 </div>
               ) : (
-                filteredBatchStudents.map(student => {
-                  const isChecked = batchSelectedStudentIds.includes(student.id);
-                  const currentCoach = getAssignedCoachForStudent(student.id);
-                  const isWithThisCoach = currentCoach?.id === batchAssignCoach.id;
+                filteredGroupStudents.map(student => {
+                  const isChecked = groupSelectedStudentIds.includes(student.id);
+                  const otherGroup = assignmentGroups.find(
+                    g => g.id !== activeGroupForStudentModal.id && g.studentIds.includes(student.id)
+                  );
+                  const isInThisGroup = activeGroupForStudentModal.studentIds.includes(student.id);
 
                   return (
                     <div
                       key={student.id}
-                      onClick={() => toggleStudentInBatch(student.id)}
+                      onClick={() => {
+                        setGroupSelectedStudentIds(prev =>
+                          prev.includes(student.id) ? prev.filter(id => id !== student.id) : [...prev, student.id]
+                        );
+                      }}
                       className={`flex items-center justify-between gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
                         isChecked
                           ? 'bg-emerald-50/90 border-emerald-400 shadow-2xs'
@@ -1049,13 +1384,13 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
                       </div>
 
                       <div className="shrink-0">
-                        {isWithThisCoach ? (
+                        {isInThisGroup ? (
                           <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-md border border-emerald-200">
-                            HLV này đang kèm
+                            Đang trong nhóm này
                           </span>
-                        ) : currentCoach ? (
+                        ) : otherGroup ? (
                           <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                            Đang học HLV {currentCoach.name}
+                            Đang ở {otherGroup.name}
                           </span>
                         ) : (
                           <span className="text-[10px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
@@ -1069,27 +1404,26 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
               )}
             </div>
 
-            {/* Footer Buttons */}
             <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100">
               <span className="text-xs text-slate-500 font-medium">
-                Đã chọn: <strong className="text-emerald-700 font-bold">{batchSelectedStudentIds.length}</strong> / {classStudents.length} học viên
+                Đã chọn: <strong className="text-emerald-700 font-bold">{groupSelectedStudentIds.length}</strong> học viên
               </span>
 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setBatchAssignCoach(null)}
+                  onClick={() => setActiveGroupForStudentModal(null)}
                   className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   type="button"
-                  onClick={handleConfirmBatchAssign}
+                  onClick={handleConfirmGroupStudents}
                   className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <Check className="w-4 h-4" />
-                  Lưu phân công ({batchSelectedStudentIds.length})
+                  Lưu học viên ({groupSelectedStudentIds.length})
                 </button>
               </div>
             </div>
