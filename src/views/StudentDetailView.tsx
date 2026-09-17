@@ -47,12 +47,14 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
     editStudent,
     currentUser,
     isCoach,
-    navigate
+    navigate,
+    showToast
   } = useApp();
 
   const canConfirmPayment = currentUser.role === 'ADMIN' || currentUser.role === 'FACILITY_MANAGER';
+  const canEditSchedule = currentUser.role === 'ADMIN' || currentUser.role === 'FACILITY_MANAGER';
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'attendance' | 'payments'>('profile');
+  const [activeTab, setActiveTab] = useState<'attendance' | 'payments'>('attendance');
   const [isAddSessionModalOpen, setIsAddSessionModalOpen] = useState(false);
   const [extraSessionsCount, setExtraSessionsCount] = useState(12);
 
@@ -92,6 +94,7 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
   const studentClass = classes.find(c => c.id === currentStudent.classId);
 
   const openEditSessionModal = (session: ScheduledSession, index: number) => {
+    if (!canEditSchedule) return;
     setEditingSessionIndex(index);
     setEditSessionDate(session.date);
     setEditSessionFacilityId(session.facilityId || facilities[0]?.id || 'CS01');
@@ -114,6 +117,10 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
 
   const handleSaveSessionEdit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEditSchedule) {
+      showToast('Chỉ Admin và Quản lý cơ sở mới có quyền đổi lịch & ca buổi tập!', 'error');
+      return;
+    }
     if (editingSessionIndex === null) return;
     const targetFac = facilities.find(f => f.id === editSessionFacilityId) || facilities[0];
     const targetSh = shifts.find(s => s.id === editSessionShiftId) || shifts[0];
@@ -439,69 +446,8 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
           </div>
         </div>
 
-        {/* 4 Stats Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
-            <div className="text-xs font-bold text-slate-400 uppercase">Gói đăng ký</div>
-            <div className="text-2xl font-extrabold text-[#0F172A] mt-1">
-              {currentStudent.packageSessions} Buổi
-            </div>
-            <div className="text-[11px] text-slate-500 mt-0.5">
-              {currentStudent.carriedOverSessions && currentStudent.carriedOverSessions > 0 ? (
-                <span className="text-emerald-700 font-bold">
-                  (Bảo lưu +{currentStudent.carriedOverSessions} buổi cũ)
-                </span>
-              ) : (
-                'Kỳ học: ' + (currentStudent.month || 'Tháng 08/2026')
-              )}
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
-            <div className="text-xs font-bold text-slate-400 uppercase">Đã tham gia</div>
-            <div className="text-2xl font-extrabold text-[#10B981] mt-1">
-              {currentStudent.attendedSessions} Buổi
-            </div>
-            <div className="text-[11px] text-slate-500 mt-0.5">Điểm danh có mặt</div>
-          </div>
-
-          <div
-            className={`p-4 rounded-2xl border ${
-              currentStudent.remainingSessions === 0
-                ? 'bg-rose-50 border-rose-200 text-rose-950'
-                : currentStudent.remainingSessions <= 2
-                ? 'bg-amber-50 border-amber-200 text-amber-950'
-                : 'bg-emerald-50 border-emerald-200 text-emerald-950'
-            }`}
-          >
-            <div className="text-xs font-bold uppercase tracking-wider opacity-75">
-              Số buổi còn lại
-            </div>
-            <div className="text-3xl font-black mt-1">
-              {currentStudent.remainingSessions} Buổi
-            </div>
-            <div className="text-[11px] font-semibold mt-0.5">
-              {currentStudent.remainingSessions === 0
-                ? 'Đã hết buổi - Cần gia hạn'
-                : currentStudent.remainingSessions <= 2
-                ? 'Sắp hết buổi'
-                : 'Đủ điều kiện tập luyện'}
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
-            <div className="text-xs font-bold text-slate-400 uppercase">Tình trạng học phí</div>
-            <div className="mt-1.5">
-              <PaymentBadge status={currentStudent.paymentStatus} />
-            </div>
-            <div className="text-[11px] text-slate-500 mt-1">
-              {currentStudent.paymentStatus === 'Paid' ? 'Đã hoàn tất' : 'Chưa thanh toán'}
-            </div>
-          </div>
-        </div>
-
         {/* Fixed Schedule & Leave Quota Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Sân & Ngày học cụ thể */}
           <div className="p-5 rounded-3xl bg-white border border-slate-200/90 text-[#0F172A] flex flex-col space-y-3.5 shadow-xs">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -599,15 +545,17 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
                       return (
                         <div
                           key={s.date + idx}
-                          onClick={() => openEditSessionModal(s, idx)}
-                          className={`group p-2.5 rounded-xl border text-xs flex flex-col justify-between transition-colors cursor-pointer hover:border-emerald-500 ${
+                          onClick={() => canEditSchedule && openEditSessionModal(s, idx)}
+                          className={`group p-2.5 rounded-xl border text-xs flex flex-col justify-between transition-colors ${
+                            canEditSchedule ? 'cursor-pointer hover:border-emerald-500' : 'cursor-default'
+                          } ${
                             isToday
                               ? 'bg-emerald-50/90 border-emerald-400 ring-2 ring-emerald-400/30 shadow-xs'
                               : isPast
                               ? 'bg-slate-50/70 border-slate-200 text-slate-500 hover:bg-white'
                               : 'bg-white border-slate-200/90'
                           }`}
-                          title={`Bấm để đổi sân, ca học hoặc dời ngày cho buổi ${d}/${m}`}
+                          title={canEditSchedule ? `Bấm để đổi sân, ca học hoặc dời ngày cho buổi ${d}/${m}` : undefined}
                         >
                           <div className="flex items-center justify-between">
                             <span className={`font-black ${isToday ? 'text-emerald-700 font-extrabold' : isPast ? 'text-slate-500' : 'text-slate-800'}`}>
@@ -623,7 +571,9 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
                               }`}>
                                 {weekday}
                               </span>
-                              <Edit3 className="w-3 h-3 text-slate-300 group-hover:text-emerald-600 transition-colors" />
+                              {canEditSchedule && (
+                                <Edit3 className="w-3 h-3 text-slate-300 group-hover:text-emerald-600 transition-colors" />
+                              )}
                             </div>
                           </div>
                           <div className="mt-1.5 flex flex-col gap-0.5">
@@ -644,6 +594,17 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
                       currentStudent.specificDates.map((d, dIdx) => {
                         const [y, m, day] = d.split('-');
                         const weekday = getWeekdayLabel(d);
+                        if (!canEditSchedule) {
+                          return (
+                            <div
+                              key={d}
+                              className="px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold flex items-center gap-1.5"
+                            >
+                              <span>{day}/{m}</span>
+                              <span className="text-[10px] text-slate-400">({weekday})</span>
+                            </div>
+                          );
+                        }
                         return (
                           <button
                             key={d}
@@ -776,16 +737,20 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
                       +{currentStudent.carriedOverSessions || 0} buổi bảo lưu
                     </span>
                   </div>
-                  <div className="flex justify-between pt-2">
-                    <span className="text-slate-500 font-medium">Học phí kỳ này:</span>
-                    <span className="font-extrabold text-[#0F172A]">
-                      {(currentStudent.tuitionFee || (currentStudent.packageSessions * (sessionUnitPrice || 150000))).toLocaleString('vi-VN')} đ
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center pt-2">
-                    <span className="text-slate-500 font-medium">Tình trạng học phí:</span>
-                    <PaymentBadge status={currentStudent.paymentStatus} />
-                  </div>
+                  {!isCoach && (
+                    <>
+                      <div className="flex justify-between pt-2">
+                        <span className="text-slate-500 font-medium">Học phí kỳ này:</span>
+                        <span className="font-extrabold text-[#0F172A]">
+                          {(currentStudent.tuitionFee || (currentStudent.packageSessions * (sessionUnitPrice || 150000))).toLocaleString('vi-VN')} đ
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center pt-2">
+                        <span className="text-slate-500 font-medium">Tình trạng học phí:</span>
+                        <PaymentBadge status={currentStudent.paymentStatus} />
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Quick Actions */}
@@ -809,9 +774,8 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
       {/* Tabs */}
       <div className="flex border-b border-slate-100 bg-white px-4 sm:px-6 rounded-2xl shadow-xs overflow-x-auto whitespace-nowrap">
         {[
-          { id: 'profile', label: 'Thông tin cá nhân' },
           { id: 'attendance', label: `Lịch sử điểm danh (${currentStudent.attendanceHistory?.length || 0})` },
-          { id: 'payments', label: `Lịch sử học phí (${studentPayments.length})` }
+          ...(!isCoach ? [{ id: 'payments', label: `Lịch sử học phí (${studentPayments.length})` }] : [])
         ].map(tab => (
           <button
             key={tab.id}
@@ -826,45 +790,6 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
           </button>
         ))}
       </div>
-
-      {/* Tab 1: Profile */}
-      {activeTab === 'profile' && (
-        <div className="max-w-2xl">
-          {/* Thông tin cá nhân & tài khoản */}
-          <div className="p-6 bg-white rounded-3xl border border-slate-100 shadow-xs space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                  <UserCheck className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-[#0F172A]">Thông Tin Cá Nhân & Liên Hệ</h3>
-                  <p className="text-xs text-slate-500">Hồ sơ học viên và thông tin liên lạc</p>
-                </div>
-              </div>
-              <StudentStatusBadge
-                status={currentStudent.status}
-                remaining={currentStudent.remainingSessions}
-              />
-            </div>
-
-            <div className="space-y-3.5 text-sm divide-y divide-slate-100">
-              <div className="flex justify-between pt-2">
-                <span className="text-slate-500 font-medium">Họ và tên:</span>
-                <strong className="text-[#0F172A] font-bold">{currentStudent.name}</strong>
-              </div>
-              <div className="flex justify-between pt-2">
-                <span className="text-slate-500 font-medium">Số điện thoại:</span>
-                <strong className="text-[#0F172A]">{currentStudent.phone}</strong>
-              </div>
-              <div className="flex justify-between pt-2">
-                <span className="text-slate-500 font-medium">Ngày gia nhập:</span>
-                <strong className="text-[#0F172A]">{currentStudent.joinedDate}</strong>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Tab 2: Attendance History */}
       {activeTab === 'attendance' && (
@@ -917,7 +842,7 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
       )}
 
       {/* Tab 3: Payments History */}
-      {activeTab === 'payments' && (
+      {activeTab === 'payments' && !isCoach && (
         <div className="bg-white rounded-3xl border border-slate-100 shadow-xs overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex items-center justify-between">
             <h3 className="font-bold text-base text-[#0F172A]">Lịch Sử Thu Học Phí</h3>

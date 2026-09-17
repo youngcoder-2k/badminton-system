@@ -34,7 +34,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSearch, onOpenAddStudent }
     isCoach,
     pendingScheduleCount,
     adminNotifications,
-    chatMessages
+    chatMessages,
+    setAttendanceTarget
   } = useApp();
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -101,7 +102,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSearch, onOpenAddStudent }
       <div className="flex items-center gap-3 sm:gap-4">
         {/* Quick Attendance button */}
         <button
-          onClick={() => navigate('attendance')}
+          onClick={() => {
+            setAttendanceTarget(null);
+            navigate('attendance');
+          }}
           className="hidden md:inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-[#10B981] font-semibold text-xs rounded-xl border border-emerald-200 transition-colors cursor-pointer"
         >
           <Flame className="w-3.5 h-3.5 fill-[#10B981] text-[#10B981]" />

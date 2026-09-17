@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Modal } from '../components/common/Modal';
-import { Coach, Student } from '../types';
+import { AttendanceRecordItem, Coach, Student } from '../types';
 
 export interface AssignmentGroup {
   id: string;
@@ -50,8 +50,13 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
     batchAssignStudentsToCoachInClass,
     addCoachToDailyClass,
     removeCoachFromDailyClass,
+    checkCoachShiftConflict,
     addStudentsToDailyClass,
-    removeStudentFromDailyClass
+    removeStudentFromDailyClass,
+    addMakeupStudentToSession,
+    removeMakeupStudentFromSession,
+    shifts,
+    showToast
   } = useApp();
 
   const [isEditingNote, setIsEditingNote] = useState(false);
@@ -142,18 +147,86 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
   const [touchStudent, setTouchStudent] = useState<Student | null>(null);
   const [touchDragPos, setTouchDragPos] = useState<{ x: number; y: number } | null>(null);
 
+  // Make-up Student Modal State
+  const [isMakeupModalOpen, setIsMakeupModalOpen] = useState(false);
+  const [makeupSearchQuery, setMakeupSearchQuery] = useState('');
+  const [selectedMakeupStudentIds, setSelectedMakeupStudentIds] = useState<string[]>([]);
+  const [makeupNote, setMakeupNote] = useState('Học bù ca ngày hôm nay');
+
+  // Danh sách bản ghi học viên học bù tại ca học này (từ sessions)
+  const classMakeupRecords = useMemo(() => {
+    const list: AttendanceRecordItem[] = [];
+    const addRecord = (item: AttendanceRecordItem) => {
+      const sid = item.studentId || (item as any).id;
+      if (sid && !list.some(m => (m.studentId || (m as any).id) === sid)) {
+        list.push({ ...item, studentId: sid });
+      }
+    };
+
+    if (sessionForClass?.makeupStudents) {
+      sessionForClass.makeupStudents.forEach(addRecord);
+    }
+    if (sessionForClass?.attendanceRecords) {
+      sessionForClass.attendanceRecords.filter(r => r.isMakeup).forEach(addRecord);
+    }
+
+    sessions
+      .filter(
+        s =>
+          s.date === classDate &&
+          (s.facilityId === currentClass.facilityId || s.classId === currentClass.id) &&
+          (!s.shiftId || s.shiftId === currentClass.shiftId)
+      )
+      .forEach(s => {
+        (s.makeupStudents || []).forEach(addRecord);
+        (s.attendanceRecords || []).filter(r => r.isMakeup).forEach(addRecord);
+      });
+
+    return list;
+  }, [sessionForClass, sessions, classDate, currentClass]);
+
+  const makeupStudentIdSet = useMemo(() => {
+    return new Set(classMakeupRecords.map(m => m.studentId || (m as any).id));
+  }, [classMakeupRecords]);
+
   const classStudents = useMemo(() => {
     const studentIdSet = new Set<string>(currentClass.studentIds || []);
     const manualIds = dailyStudentAssignments?.[currentClass.id] || [];
     manualIds.forEach(id => studentIdSet.add(id));
+    classMakeupRecords.forEach(m => {
+      const sid = m.studentId || (m as any).id;
+      if (sid) studentIdSet.add(sid);
+    });
 
     if (studentIdSet.size > 0) {
       return Array.from(studentIdSet)
-        .map(id => students.find(s => s.id === id))
+        .map(id => {
+          const found = students.find(s => s.id === id);
+          if (found) return found;
+          const makeup = classMakeupRecords.find(m => (m.studentId || (m as any).id) === id);
+          if (makeup) {
+            return {
+              id,
+              code: id,
+              name: makeup.studentName || 'Học viên',
+              avatar: makeup.studentAvatar,
+              phone: makeup.studentPhone || '',
+              email: '',
+              status: 'Studying',
+              packageSessions: 12,
+              usedSessions: 1,
+              attendedSessions: 1,
+              remainingSessions: 11,
+              classId: currentClass.id,
+              className: makeup.makeupFromClass || currentClass.name || 'Lớp Cầu Lông'
+            } as unknown as Student;
+          }
+          return undefined;
+        })
         .filter((s): s is Student => Boolean(s));
     }
     return students.filter(s => s.classId === currentClass.id);
-  }, [currentClass, students, dailyStudentAssignments]);
+  }, [currentClass, students, dailyStudentAssignments, classMakeupRecords]);
 
   // Group Assignment State (Each group/card can have multiple coaches and multiple students)
   const storageKey = `badminton_assignment_groups_v5_${currentClass.id}`;
@@ -411,22 +484,108 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
     );
   }, [classStudents, groupStudentSearchQuery]);
 
-  const handleGoAttendance = (sessionId?: string) => {
-    setAttendanceTarget({
-      classId: currentClass.id,
-      date: classDate,
-      facilityId: currentClass.facilityId,
-      sessionId
-    });
-    navigate('attendance');
-  };
-
   const remainingSlots = Math.max(0, (currentClass.maxStudents || 6) - classStudents.length);
   const cleanShift =
     currentClass.shiftName ||
     (currentClass.scheduleDaysText
       ? currentClass.scheduleDaysText.replace(/\s*\(\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}\)/g, '').trim()
       : 'Ca học');
+
+  const handleGoAttendance = (sessionId?: string) => {
+    setAttendanceTarget({
+      classId: currentClass.id,
+      date: classDate,
+      facilityId: currentClass.facilityId,
+      shiftId: currentClass.shiftId || (currentClass.id.startsWith('CLS_') ? currentClass.id.split('_')[2] : undefined),
+      sessionId: sessionId || sessionForClass?.id
+    });
+    navigate('attendance');
+  };
+
+  // Danh sách học viên có thể thêm học bù vào ca này
+  const availableMakeupStudents = useMemo(() => {
+    return students.filter(s => {
+      const isNotInCurrentList = !classStudents.some(cs => cs.id === s.id);
+      const notInMakeup = !classMakeupRecords.some(m => (m.studentId || (m as any).id) === s.id);
+      const matches =
+        !makeupSearchQuery ||
+        s.name.toLowerCase().includes(makeupSearchQuery.toLowerCase()) ||
+        s.code?.toLowerCase().includes(makeupSearchQuery.toLowerCase()) ||
+        s.phone?.includes(makeupSearchQuery);
+      return isNotInCurrentList && notInMakeup && matches;
+    });
+  }, [students, classStudents, classMakeupRecords, makeupSearchQuery]);
+
+  const isAllMakeupSelected =
+    availableMakeupStudents.length > 0 &&
+    availableMakeupStudents.every(s => selectedMakeupStudentIds.includes(s.id));
+
+  const handleToggleSelectAllMakeup = () => {
+    if (isAllMakeupSelected) {
+      setSelectedMakeupStudentIds(prev =>
+        prev.filter(id => !availableMakeupStudents.some(s => s.id === id))
+      );
+    } else {
+      setSelectedMakeupStudentIds(prev => {
+        const combined = new Set([...prev, ...availableMakeupStudents.map(s => s.id)]);
+        return Array.from(combined);
+      });
+    }
+  };
+
+  const handleToggleMakeupStudent = (studentId: string) => {
+    setSelectedMakeupStudentIds(prev =>
+      prev.includes(studentId)
+        ? prev.filter(id => id !== studentId)
+        : [...prev, studentId]
+    );
+  };
+
+  const handleAddMakeupConfirm = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedMakeupStudentIds.length === 0) return;
+
+    const targetStudents = students.filter(s => selectedMakeupStudentIds.includes(s.id));
+    if (targetStudents.length === 0) return;
+
+    const activeShift = shifts.find(sh => sh.id === currentClass.shiftId) || shifts[0];
+    const sessionId =
+      sessionForClass?.id ||
+      `sess-${currentClass.facilityId || 'CS01'}-${currentClass.shiftId || activeShift?.id || 'CA01'}-${classDate}`;
+
+    const sessionMeta = {
+      date: classDate,
+      facilityId: currentClass.facilityId || 'CS01',
+      facilityName: currentClass.court || currentClass.facilityName || 'Triều Khúc',
+      shiftId: currentClass.shiftId || activeShift?.id || 'CA01',
+      shiftName: cleanShift || activeShift?.name || 'Ca tập',
+      timeSlot: currentClass.timeSlot || activeShift?.timeSlot || '18:00 - 19:30'
+    };
+
+    targetStudents.forEach(st => {
+      addMakeupStudentToSession(sessionId, st, makeupNote, sessionMeta, targetStudents.length > 1);
+    });
+
+    if (targetStudents.length > 1) {
+      showToast(
+        `Đã thêm ${targetStudents.length} học viên vào danh sách học bù ca này thành công!`,
+        'success'
+      );
+    }
+
+    setIsMakeupModalOpen(false);
+    setSelectedMakeupStudentIds([]);
+    setMakeupNote('Học bù ca ngày hôm nay');
+  };
+
+  const handleRemoveMakeup = (studentId: string) => {
+    const targetStudent = students.find(s => s.id === studentId);
+    if (window.confirm(`Bạn có chắc muốn xóa học viên ${targetStudent?.name || studentId} khỏi danh sách học bù ca này?`)) {
+      const sessionId = sessionForClass?.id || '';
+      removeMakeupStudentFromSession(sessionId, studentId);
+      handleDropStudent(studentId, null);
+    }
+  };
 
   const isAssignedToThisClass = useMemo(() => {
     if (!isCoach) return true;
@@ -476,14 +635,25 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
           <span>{currentClass.id.startsWith('CLS_') ? 'Quay lại lịch học' : 'Quay lại danh sách lớp học'}</span>
         </button>
 
-        <button
-          onClick={() => handleGoAttendance()}
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#10B981] hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer self-start sm:self-auto"
-          title={isCoach && !isClassToday ? "Xem điểm danh ca học (Chỉ xem)" : "Điểm danh ca học"}
-        >
-          <CheckSquare className="w-4 h-4" />
-          <span>{isCoach && !isClassToday ? 'Xem Điểm Danh Ca Này' : 'Điểm Danh Ca Học Này'}</span>
-        </button>
+        <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+          <button
+            type="button"
+            onClick={() => setIsMakeupModalOpen(true)}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer whitespace-nowrap"
+          >
+            <UserPlus className="w-4 h-4 shrink-0" />
+            <span>THÊM HỌC BÙ</span>
+          </button>
+
+          <button
+            onClick={() => handleGoAttendance()}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#10B981] hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer whitespace-nowrap"
+            title={isCoach && !isClassToday ? "Xem điểm danh ca học (Chỉ xem)" : "Điểm danh ca học"}
+          >
+            <CheckSquare className="w-4 h-4" />
+            <span>{isCoach && !isClassToday ? 'Xem Điểm Danh Ca Này' : 'Điểm Danh Ca Học Này'}</span>
+          </button>
+        </div>
       </div>
 
       {/* 1. Class Information Header Card */}
@@ -666,8 +836,18 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
             )}
 
             <span className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-xs font-bold shrink-0">
-              {classStudents.length} học viên theo học
+              {classStudents.length} học viên theo học {classMakeupRecords.length > 0 && `(${classMakeupRecords.length} học bù)`}
             </span>
+
+            <button
+              type="button"
+              onClick={() => setIsMakeupModalOpen(true)}
+              className="px-3 py-1.5 bg-amber-50 text-amber-800 hover:bg-amber-500 hover:text-white border border-amber-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs shrink-0"
+              title="Thêm học viên học bù vào ca này"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Thêm học bù</span>
+            </button>
 
             {canManage && studentViewMode === 'by_coach' && (
               <button
@@ -705,29 +885,68 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
           </div>
         ) : studentViewMode === 'list' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {classStudents.map(student => (
-              <div
-                key={student.id}
-                className="flex items-center gap-3 p-3 bg-white rounded-2xl border border-slate-200/90 shadow-2xs select-none hover:border-slate-300 transition-all"
-              >
-                {student.avatar ? (
-                  <img
-                    src={student.avatar}
-                    alt={student.name}
-                    className="w-9 h-9 rounded-xl object-cover border border-slate-200 shrink-0"
-                  />
-                ) : (
-                  <div className="w-9 h-9 rounded-xl bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs">
-                    {student.name.charAt(0)}
+            {classStudents.map(student => {
+              const isMakeup = makeupStudentIdSet.has(student.id);
+              const makeupRecord = isMakeup
+                ? classMakeupRecords.find(m => (m.studentId || (m as any).id) === student.id)
+                : null;
+
+              return (
+                <div
+                  key={student.id}
+                  className={`flex items-center gap-3 p-3 rounded-2xl border transition-all shadow-2xs select-none ${
+                    isMakeup
+                      ? 'bg-amber-50/60 border-amber-200/90 hover:border-amber-300'
+                      : 'bg-white border-slate-200/90 hover:border-slate-300'
+                  }`}
+                >
+                  {student.avatar ? (
+                    <img
+                      src={student.avatar}
+                      alt={student.name}
+                      className={`w-9 h-9 rounded-xl object-cover border shrink-0 ${
+                        isMakeup ? 'border-amber-200' : 'border-slate-200'
+                      }`}
+                    />
+                  ) : (
+                    <div
+                      className={`w-9 h-9 rounded-xl font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs ${
+                        isMakeup ? 'bg-amber-500 text-white' : 'bg-emerald-500 text-white'
+                      }`}
+                    >
+                      {student.name.charAt(0)}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs font-bold text-[#0F172A] truncate">
+                        {student.name}
+                      </span>
+                      {isMakeup && (
+                        <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold shrink-0">
+                          Học bù
+                        </span>
+                      )}
+                    </div>
+                    {isMakeup && (
+                      <div className="text-[10px] text-amber-700 truncate font-medium mt-0.5">
+                        {makeupRecord?.note || 'Học bù ca này'}
+                      </div>
+                    )}
                   </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-bold text-[#0F172A] truncate">
-                    {student.name}
-                  </div>
+                  {canManage && isMakeup && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveMakeup(student.id)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors shrink-0 cursor-pointer"
+                      title="Xóa khỏi danh sách học bù ca này"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="space-y-6">
@@ -957,8 +1176,15 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
                                   </div>
                                 )}
                                 <div className="min-w-0 flex-1">
-                                  <div className="text-xs font-bold text-[#0F172A] truncate group-hover:text-emerald-700 transition-colors">
-                                    {student.name}
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-bold text-[#0F172A] truncate group-hover:text-emerald-700 transition-colors">
+                                      {student.name}
+                                    </span>
+                                    {makeupStudentIdSet.has(student.id) && (
+                                      <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[9px] font-bold shrink-0">
+                                        Học bù
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -1117,6 +1343,9 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
                 if (reassignModalStudent) {
                   if (window.confirm(`Bạn có chắc muốn xóa học viên ${reassignModalStudent.name} khỏi ca học này?`)) {
                     handleDropStudent(reassignModalStudent.id, null);
+                    if (makeupStudentIdSet.has(reassignModalStudent.id)) {
+                      removeMakeupStudentFromSession(sessionForClass?.id || '', reassignModalStudent.id);
+                    }
                     removeStudentFromDailyClass(currentClass.id, reassignModalStudent.id);
                     setReassignModalStudent(null);
                   }
@@ -1183,6 +1412,8 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
                 </div>
               ) : (
                 filteredGroupCoaches.map(coach => {
+                  const conflict = checkCoachShiftConflict(coach.id, currentClass.id);
+                  const isDisabled = Boolean(conflict);
                   const isChecked = groupSelectedCoachIds.includes(coach.id);
                   const otherGroup = assignmentGroups.find(
                     g => g.id !== activeGroupForCoachModal?.id && g.coachIds.includes(coach.id)
@@ -1193,19 +1424,25 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
                     <div
                       key={coach.id}
                       onClick={() => {
+                        if (isDisabled) return;
                         setGroupSelectedCoachIds(prev =>
                           prev.includes(coach.id) ? prev.filter(id => id !== coach.id) : [...prev, coach.id]
                         );
                       }}
-                      className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
-                        isChecked
-                          ? 'bg-emerald-50/90 border-emerald-400 shadow-2xs'
-                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all select-none ${
+                        isDisabled
+                          ? 'bg-slate-100/70 border-slate-200 text-slate-400 cursor-not-allowed'
+                          : isChecked
+                          ? 'bg-emerald-50/90 border-emerald-400 shadow-2xs cursor-pointer'
+                          : 'bg-white border-slate-200 hover:border-slate-300 cursor-pointer'
                       }`}
+                      title={conflict ? `Đang dạy ca ${conflict.conflictShiftName} tại ${conflict.conflictFacilityName}` : undefined}
                     >
                       <div className="flex items-center gap-3 min-w-0 flex-1">
                         <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-colors shrink-0 ${
-                          isChecked
+                          isDisabled
+                            ? 'border-slate-200 bg-slate-100 opacity-50'
+                            : isChecked
                             ? 'bg-emerald-600 border-emerald-600 text-white'
                             : 'border-slate-300 bg-white'
                         }`}>
@@ -1216,23 +1453,35 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
                           <img
                             src={coach.avatar}
                             alt={coach.name}
-                            className="w-9 h-9 rounded-xl object-cover border border-slate-200 shrink-0"
+                            className={`w-9 h-9 rounded-xl object-cover border border-slate-200 shrink-0 ${isDisabled ? 'opacity-50' : ''}`}
                           />
                         ) : (
-                          <div className="w-9 h-9 rounded-xl bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                          <div className={`w-9 h-9 rounded-xl text-white font-bold text-xs flex items-center justify-center shrink-0 ${
+                            isDisabled ? 'bg-slate-300' : 'bg-emerald-500'
+                          }`}>
                             {coach.name.charAt(0)}
                           </div>
                         )}
 
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-bold text-[#0F172A] truncate">
+                          <div className={`text-sm font-bold truncate ${isDisabled ? 'text-slate-500' : 'text-[#0F172A]'}`}>
                             {coach.name}
                           </div>
+                          {conflict && (
+                            <div className="text-[10px] text-amber-600 font-medium truncate flex items-center gap-1 mt-0.5">
+                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                              Đang dạy tại {conflict.conflictFacilityName}
+                            </div>
+                          )}
                         </div>
                       </div>
 
                       <div className="shrink-0">
-                        {isInThisGroup ? (
+                        {conflict ? (
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200">
+                            Trùng ca
+                          </span>
+                        ) : isInThisGroup ? (
                           <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-md border border-emerald-200">
                             Đang trong nhóm này
                           </span>
@@ -1429,6 +1678,142 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Modal: Thêm Học Viên Học Bù Vào Ca Tập */}
+      <Modal
+        isOpen={isMakeupModalOpen}
+        onClose={() => {
+          setIsMakeupModalOpen(false);
+          setSelectedMakeupStudentIds([]);
+        }}
+        title="Thêm Học Viên Học Bù Vào Ca Tập"
+        subtitle={`${cleanShift} • ${currentClass.court || currentClass.facilityName || 'Triều Khúc'} (Ngày ${classDate})`}
+      >
+        <form onSubmit={handleAddMakeupConfirm} className="space-y-4">
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={makeupSearchQuery}
+              onChange={e => setMakeupSearchQuery(e.target.value)}
+              placeholder="Tìm kiếm theo tên hoặc SĐT học viên..."
+              className="w-full pl-9 pr-3.5 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:border-amber-500"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-bold text-slate-700">
+                Chọn học viên muốn học bù {selectedMakeupStudentIds.length > 0 && `(${selectedMakeupStudentIds.length} đã chọn)`} *
+              </label>
+              {availableMakeupStudents.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleToggleSelectAllMakeup}
+                  className="text-[11px] font-bold text-amber-600 hover:text-amber-700 cursor-pointer"
+                >
+                  {isAllMakeupSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                </button>
+              )}
+            </div>
+
+            <div className="max-h-56 overflow-y-auto no-scrollbar border border-slate-200 rounded-xl divide-y divide-slate-100">
+              {availableMakeupStudents.length === 0 ? (
+                <div className="p-4 text-center text-xs text-slate-400">
+                  Không tìm thấy học viên phù hợp
+                </div>
+              ) : (
+                availableMakeupStudents.map(st => {
+                  const isSelected = selectedMakeupStudentIds.includes(st.id);
+                  return (
+                    <div
+                      key={st.id}
+                      onClick={() => handleToggleMakeupStudent(st.id)}
+                      className={`p-2.5 flex items-center justify-between cursor-pointer transition-colors ${
+                        isSelected ? 'bg-amber-50/90 text-amber-950 font-medium' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                        {st.avatar ? (
+                          <img
+                            src={st.avatar}
+                            alt={st.name}
+                            className="w-8 h-8 rounded-lg object-cover shrink-0"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-lg bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                            {st.name.charAt(0)}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <span className="text-xs font-bold text-[#0F172A] block truncate">
+                            {st.name}
+                          </span>
+                          <span className="text-[10px] text-slate-400 block truncate">
+                            {st.phone || st.code || st.className || 'Học viên'}
+                          </span>
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        name="selectedMakeup"
+                        checked={isSelected}
+                        onChange={() => handleToggleMakeupStudent(st.id)}
+                        onClick={e => e.stopPropagation()}
+                        className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-slate-300 cursor-pointer shrink-0"
+                      />
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1">
+              Ghi chú học bù
+            </label>
+            <input
+              type="text"
+              value={makeupNote}
+              onChange={e => setMakeupNote(e.target.value)}
+              placeholder="Ví dụ: Học bù ca ngày hôm nay..."
+              className="w-full px-3.5 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:border-amber-500"
+            />
+          </div>
+
+          <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+            <span className="text-xs text-slate-500">
+              {selectedMakeupStudentIds.length > 0 ? (
+                <span className="font-semibold text-amber-700">
+                  Đã chọn {selectedMakeupStudentIds.length} học viên
+                </span>
+              ) : (
+                'Chưa chọn học viên'
+              )}
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMakeupModalOpen(false);
+                  setSelectedMakeupStudentIds([]);
+                }}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                disabled={selectedMakeupStudentIds.length === 0}
+                className="px-5 py-2 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 rounded-xl shadow-xs transition-colors cursor-pointer"
+              >
+                Thêm {selectedMakeupStudentIds.length > 0 ? `(${selectedMakeupStudentIds.length}) ` : ''}Học Viên Vào Ca Này
+              </button>
+            </div>
+          </div>
+        </form>
       </Modal>
     </div>
   );

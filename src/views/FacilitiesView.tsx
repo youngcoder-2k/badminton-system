@@ -91,7 +91,7 @@ export const FacilitiesView: React.FC = () => {
             onClick={() => navigate('dashboard')}
             className="px-5 py-2.5 bg-[#10B981] hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
           >
-            Quay Về Dashboard
+            Quay Về Trang Chủ
           </button>
         </div>
       </div>

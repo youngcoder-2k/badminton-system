@@ -797,7 +797,7 @@ export const StudentsView: React.FC = () => {
                 )}
                 <th className="py-3.5 px-4">Quỹ phép</th>
                 <th className="py-3.5 px-4 w-52">Tiến độ buổi học</th>
-                <th className="py-3.5 px-4">Học phí</th>
+                {!isCoach && <th className="py-3.5 px-4">Học phí</th>}
                 <th className="py-3.5 px-4">Trạng thái</th>
                 <th className="py-3.5 px-5 text-right">Thao tác</th>
               </tr>
@@ -807,7 +807,7 @@ export const StudentsView: React.FC = () => {
                 <tr>
                   <td
                     colSpan={
-                      6 +
+                      (isCoach ? 5 : 6) +
                       (currentUser.role !== 'FACILITY_MANAGER' ? 1 : 0)
                     }
                     className="py-12 text-center text-slate-400"
@@ -881,9 +881,11 @@ export const StudentsView: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td className="py-4 px-4">
-                        <PaymentBadge status={student.paymentStatus} />
-                      </td>
+                      {!isCoach && (
+                        <td className="py-4 px-4">
+                          <PaymentBadge status={student.paymentStatus} />
+                        </td>
+                      )}
                       <td className="py-4 px-4">
                         <StudentStatusBadge
                           status={student.status}
@@ -945,9 +947,11 @@ export const StudentsView: React.FC = () => {
                     <div className="text-[11px] text-slate-400 font-normal">{student.className || 'Chưa xếp lớp'}</div>
                   </div>
                 </div>
-                <div>
-                  <PaymentBadge status={student.paymentStatus} />
-                </div>
+                {!isCoach && (
+                  <div>
+                    <PaymentBadge status={student.paymentStatus} />
+                  </div>
+                )}
               </div>
 
               <div className="p-2.5 bg-slate-50 rounded-xl text-xs space-y-1">

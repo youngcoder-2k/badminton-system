@@ -80,11 +80,15 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSearch }) => {
     <>
       {/* Top Mobile & Tablet Bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-[#0F172A] text-white z-40 px-3 sm:px-4 flex items-center justify-between border-b border-slate-800 shadow-sm">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center p-0.5 shadow-xs shrink-0 overflow-hidden border border-slate-200/20">
+        <div
+          onClick={() => navigate('dashboard')}
+          className="flex items-center gap-2.5 cursor-pointer group active:opacity-80 transition-opacity"
+          title="Bấm để về Trang chủ"
+        >
+          <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center p-0.5 shadow-xs shrink-0 overflow-hidden border border-slate-200/20 group-hover:scale-105 transition-transform">
             <img src="/logo.png" alt="HaNoi Team" className="w-full h-full object-contain" />
           </div>
-          <span className="font-extrabold text-base tracking-tight text-white">HANOI TEAM</span>
+          <span className="font-extrabold text-base tracking-tight text-white group-hover:text-[#A3E635] transition-colors">HANOI TEAM</span>
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-[#A3E635] border border-slate-700">
             {currentUser.role === 'ADMIN' ? 'Admin' : currentUser.role === 'FACILITY_MANAGER' ? 'QL Sân' : 'HLV'}
           </span>
@@ -287,7 +291,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSearch }) => {
             {/* All Navigation Links */}
             <nav className="flex-1 overflow-y-auto space-y-1">
               {[
-                { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+                { id: 'dashboard', label: 'Trang chủ', icon: LayoutDashboard },
                 ...(currentUser.role === 'ADMIN'
                   ? [{ id: 'facilities', label: 'Cơ sở', icon: MapPin }]
                   : []),
@@ -296,8 +300,8 @@ export const MobileNav: React.FC<MobileNavProps> = ({ onOpenSearch }) => {
                   : []),
                 { id: 'classes', label: 'Lớp học', icon: BookOpen },
                 { id: 'students', label: 'Học viên', icon: User },
-                ...(currentUser.role === 'ADMIN'
-                  ? [{ id: 'coaches', label: 'Huấn luyện viên', icon: UserCheck }]
+                ...(currentUser.role === 'ADMIN' || currentUser.role === 'COACH'
+                  ? [{ id: 'coaches', label: isCoach ? 'Ca dạy của tôi' : 'Huấn luyện viên', icon: UserCheck }]
                   : []),
                 { id: 'schedule', label: isCoach ? 'Lịch dạy' : 'Lịch học', icon: Calendar },
                 { id: 'attendance', label: 'Điểm danh', icon: CheckSquare },

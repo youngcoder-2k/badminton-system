@@ -136,7 +136,7 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
         st.code,
         `"${st.name}"`,
         `"${st.facilityName || 'Sân Cầu Giấy'}"`,
-        `"${st.shiftName || 'Ca 4'}"`,
+        `"${st.shiftName || 'Ca 1'}"`,
         st.specificDates?.length || st.packageSessions || 12,
         ...dayValues
       ].join(',');

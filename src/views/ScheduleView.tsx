@@ -25,7 +25,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { SessionStatusBadge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
-import { SessionSchedule } from '../types';
+import { Coach, SessionSchedule } from '../types';
 
 const formatDateDMY = (dateStr: string) => {
   if (!dateStr) return '';
@@ -79,6 +79,7 @@ export const ScheduleView: React.FC = () => {
     isFacilityManager,
     currentUser,
     assignedSessions,
+    dailyCoachAssignments,
     notifications,
     selectedId
   } = useApp();
@@ -95,10 +96,20 @@ export const ScheduleView: React.FC = () => {
   // Reminders from Management for Coach
   const coachReminders = useMemo(() => {
     if (!isCoach) return [];
-    return notifications.filter(
-      n => n.targetRole === 'COACH' && (!n.targetCoachId || n.targetCoachId === currentUser.coachId)
-    );
-  }, [isCoach, notifications, currentUser.coachId]);
+    const coachId = currentUser.coachId || currentUser.id;
+    return notifications.filter(n => {
+      if (n.targetRole !== 'COACH') return false;
+      if (n.targetCoachId && n.targetCoachId !== coachId) return false;
+      // Nếu là lời dặn của một ca cụ thể, chỉ hiển thị nếu HLV thực sự được phân công vào ca đó
+      if (n.linkTo?.id && n.linkTo.id.startsWith('CLS_')) {
+        const classId = n.linkTo.id;
+        if (classId in dailyCoachAssignments) {
+          return (dailyCoachAssignments[classId] || []).includes(coachId);
+        }
+      }
+      return true;
+    });
+  }, [isCoach, notifications, currentUser.coachId, currentUser.id, dailyCoachAssignments]);
 
   // Tự động mở Modal Đăng ký ca dạy khi được điều hướng từ nút nổi bật ở Navbar / Dashboard / Mobile
   useEffect(() => {
@@ -110,7 +121,7 @@ export const ScheduleView: React.FC = () => {
   // Admin Scheduling Modal
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [modalFacilityId, setModalFacilityId] = useState(facilities[0]?.id || 'CS01');
-  const [modalShiftId, setModalShiftId] = useState('CA04');
+  const [modalShiftId, setModalShiftId] = useState(shifts[0]?.id || 'CA01');
   const [modalClassId, setModalClassId] = useState(classes[0]?.id || 'BD-B01');
   const [modalCoachId, setModalCoachId] = useState('HLV001');
   const [modalDate, setModalDate] = useState('2026-08-28');
@@ -235,49 +246,6 @@ export const ScheduleView: React.FC = () => {
     return { id: 'CA03', name: 'Ca 2', timeSlot: '19:30 - 21:00', startTime: '19:30' };
   };
 
-  // Khử trùng lặp và gộp ca học theo Ngày + Cơ sở + Ca học (tránh trùng ca nhiều lần tại cùng 1 cơ sở)
-  const deduplicatedSessions = useMemo(() => {
-    const map = new Map<string, SessionSchedule>();
-    filteredSessions.forEach(session => {
-      const shiftInfo = getShiftInfo(session);
-      const facName = getSessionFacilityName(session);
-      const key = `${session.date}_${facName}_${shiftInfo.id || shiftInfo.name}`;
-
-      if (!map.has(key)) {
-        map.set(key, { ...session });
-      } else {
-        const existing = map.get(key)!;
-        // Gộp danh sách HLV
-        const allCoaches = [
-          ...(existing.coaches || (existing.coachId ? [{ id: existing.coachId, name: existing.coachName, avatar: existing.coachAvatar } as Coach] : [])),
-          ...(session.coaches || (session.coachId ? [{ id: session.coachId, name: session.coachName, avatar: session.coachAvatar } as Coach] : []))
-        ];
-        const uniqueCoaches = Array.from(new Map(allCoaches.map(c => [c.id || c.name, c])).values());
-
-        // Ưu tiên bản ghi có học viên thực tế
-        const resolvedStudents = Math.max(existing.totalStudents || 0, session.totalStudents || 0);
-
-        map.set(key, {
-          ...existing,
-          ...(existing.totalStudents === 0 && (session.totalStudents || 0) > 0 ? {
-            id: session.id,
-            className: session.className,
-            classId: session.classId,
-            coachId: session.coachId || existing.coachId,
-            coachName: session.coachName || existing.coachName,
-            coachAvatar: session.coachAvatar || existing.coachAvatar,
-          } : {}),
-          coaches: uniqueCoaches,
-          totalStudents: resolvedStudents,
-          attendanceDone: existing.attendanceDone || session.attendanceDone,
-          coachAttendanceDone: existing.coachAttendanceDone || session.coachAttendanceDone,
-          status: existing.status === 'Completed' || session.status === 'Completed' ? 'Completed' : existing.status
-        });
-      }
-    });
-    return Array.from(map.values());
-  }, [filteredSessions, facilities, classes, shifts]);
-
   // Helper lấy dynamic daily class ID: CLS_{facilityId}_{shiftId}_{date}
   const getDynamicClassId = (session: SessionSchedule) => {
     if (session.classId && session.classId.startsWith('CLS_')) {
@@ -297,6 +265,85 @@ export const ScheduleView: React.FC = () => {
 
     return `CLS_${fId}_${sId}_${dStr}`;
   };
+
+  // Khử trùng lặp và gộp ca học theo Ngày + Cơ sở + Ca học (tránh trùng ca nhiều lần tại cùng 1 cơ sở)
+  const deduplicatedSessions = useMemo(() => {
+    const map = new Map<string, SessionSchedule>();
+    filteredSessions.forEach(session => {
+      const shiftInfo = getShiftInfo(session);
+      const facName = getSessionFacilityName(session);
+      const key = `${session.date}_${facName}_${shiftInfo.id || shiftInfo.name}`;
+
+      if (!map.has(key)) {
+        map.set(key, { ...session });
+      } else {
+        const existing = map.get(key)!;
+        const dynamicClassId = getDynamicClassId(existing);
+
+        // Gộp danh sách HLV hoặc ưu tiên từ dailyCoachAssignments
+        let resolvedCoaches: Coach[];
+        let resolvedCoachIds: string[];
+
+        if (dynamicClassId in dailyCoachAssignments) {
+          const assignedIds = dailyCoachAssignments[dynamicClassId] || [];
+          resolvedCoachIds = assignedIds;
+          resolvedCoaches = assignedIds
+            .map(cid => coaches.find(c => c.id === cid))
+            .filter((c): c is Coach => Boolean(c));
+        } else {
+          const allCoaches = [
+            ...(existing.coaches || (existing.coachId ? [{ id: existing.coachId, name: existing.coachName, avatar: existing.coachAvatar } as Coach] : [])),
+            ...(session.coaches || (session.coachId ? [{ id: session.coachId, name: session.coachName, avatar: session.coachAvatar } as Coach] : []))
+          ];
+          resolvedCoaches = Array.from(new Map(allCoaches.map(c => [c.id || c.name, c])).values());
+          resolvedCoachIds = resolvedCoaches.map(c => c.id);
+        }
+
+        // Ưu tiên bản ghi có học viên thực tế
+        const resolvedStudents = Math.max(existing.totalStudents || 0, session.totalStudents || 0);
+
+        map.set(key, {
+          ...existing,
+          ...(existing.totalStudents === 0 && (session.totalStudents || 0) > 0 ? {
+            id: session.id,
+            className: session.className,
+            classId: session.classId,
+          } : {}),
+          coaches: resolvedCoaches,
+          coachIds: resolvedCoachIds,
+          coachId: resolvedCoachIds.join(','),
+          coachName: resolvedCoaches.length > 0 ? resolvedCoaches.map(c => c.name).join(', ') : 'Chưa có HLV',
+          coachAvatar: resolvedCoaches[0]?.avatar || existing.coachAvatar,
+          totalStudents: resolvedStudents,
+          attendanceDone: existing.attendanceDone || session.attendanceDone,
+          coachAttendanceDone: existing.coachAttendanceDone || session.coachAttendanceDone,
+          status: existing.status === 'Completed' || session.status === 'Completed' ? 'Completed' : existing.status
+        });
+      }
+    });
+
+    const result = Array.from(map.values());
+
+    // Nếu là HLV, lọc triệt để chỉ giữ lại các ca HLV thực sự được phân công
+    if (isCoach) {
+      const coachId = currentUser.coachId || currentUser.id;
+      return result.filter(s => {
+        const dynamicClassId = getDynamicClassId(s);
+        if (dynamicClassId in dailyCoachAssignments) {
+          return (dailyCoachAssignments[dynamicClassId] || []).includes(coachId);
+        }
+        if (!s.coachId || s.coachName === 'Chưa có HLV') return false;
+        return (
+          (s.coachIds && s.coachIds.includes(coachId)) ||
+          (s.coaches && s.coaches.some(c => c.id === coachId || c.name === currentUser.name)) ||
+          s.coachId === coachId ||
+          s.coachName === currentUser.name
+        );
+      });
+    }
+
+    return result;
+  }, [filteredSessions, facilities, classes, shifts, isCoach, currentUser, dailyCoachAssignments, coaches]);
 
   // Kiểm tra ca học đã diễn ra / đã điểm danh (quá khứ) hay chưa học (tương lai)
   const isPastSession = (session: SessionSchedule) => {
@@ -383,12 +430,12 @@ export const ScheduleView: React.FC = () => {
   const [isAssignSessionModalOpen, setIsAssignSessionModalOpen] = useState(false);
   const [sessionToAssign, setSessionToAssign] = useState<SessionSchedule | null>(null);
   const [assignSessionFacilityId, setAssignSessionFacilityId] = useState(facilities[0]?.id || 'CS01');
-  const [assignSessionShiftId, setAssignSessionShiftId] = useState(shifts[0]?.id || 'CA04');
+  const [assignSessionShiftId, setAssignSessionShiftId] = useState(shifts[0]?.id || 'CA01');
 
   const openAssignSessionModal = (session: SessionSchedule) => {
     setSessionToAssign(session);
     setAssignSessionFacilityId(session.facilityId || facilities[0]?.id || 'CS01');
-    setAssignSessionShiftId(session.shiftId || shifts[0]?.id || 'CA04');
+    setAssignSessionShiftId(session.shiftId || shifts[0]?.id || 'CA01');
     setIsAssignSessionModalOpen(true);
   };
 
@@ -415,7 +462,7 @@ export const ScheduleView: React.FC = () => {
 
   const openScheduleModal = () => {
     setModalFacilityId(facilities[0]?.id || 'CS01');
-    setModalShiftId(shifts[0]?.id || 'CA04');
+    setModalShiftId(shifts[0]?.id || 'CA01');
     setModalClassId(classes[0]?.id || 'BD-B01');
     setModalCoachId(classes[0]?.coachId || 'HLV001');
     setModalDate('2026-08-28');
@@ -466,19 +513,22 @@ export const ScheduleView: React.FC = () => {
       id: `SES_${Date.now()}`,
       classId: targetClass.id,
       className: targetClass.name,
+      level: targetClass.level || 'Beginner',
       coachId: targetCoach.id,
       coachName: targetCoach.name,
       facilityId: targetFacility?.id || 'CS01',
       facilityName: targetFacility?.name || 'Sân Cầu Lông Cầu Giấy',
       shiftId: targetShift.id,
       shiftName: targetShift.name,
-      timeSlot: targetShift.time,
+      timeSlot: targetShift.timeSlot || (targetShift as any).time || '18:00 - 19:30',
+      startTime: (targetShift.timeSlot || '18:00 - 19:30').split(' - ')[0],
+      endTime: (targetShift.timeSlot || '18:00 - 19:30').split(' - ')[1],
+      dayOfWeek: 'Hôm nay',
       date: modalDate,
       court: targetClass.court || 'Sân 1',
-      currentStudents: targetClass.currentStudentsCount || 0,
-      maxStudents: targetClass.maxStudents || 6,
+      totalStudents: targetClass.currentStudentsCount || 0,
       attendanceDone: false,
-      status: 'upcoming'
+      status: 'Upcoming'
     };
 
     addSession(newSession);
@@ -576,10 +626,29 @@ export const ScheduleView: React.FC = () => {
                 className="p-3 bg-white rounded-2xl border border-amber-200 shadow-2xs space-y-1.5 hover:border-amber-400 transition-colors cursor-pointer"
               >
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-extrabold text-[#0F172A]">
-                    {item.facilityName ? `${item.facilityName} - ${item.shiftName}` : item.title}
-                  </span>
-                  <span className="text-[10px] font-bold text-slate-400">
+                  <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                    <span className="px-2 py-0.5 bg-amber-100/90 text-amber-900 border border-amber-300/80 rounded-md text-[10px] font-black shrink-0">
+                      {(() => {
+                        let dateStr = item.sessionDate;
+                        if (!dateStr && item.linkTo?.id && item.linkTo.id.startsWith('CLS_')) {
+                          const parts = item.linkTo.id.split('_');
+                          dateStr = parts.slice(3).join('_');
+                        }
+                        if (!dateStr) dateStr = '2026-08-28';
+                        const dayNames = ['Chủ Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+                        const dObj = new Date(dateStr);
+                        const dayName = !isNaN(dObj.getTime()) ? dayNames[dObj.getDay()] : '';
+                        const isToday = dateStr === '2026-08-28';
+                        return isToday
+                          ? `Hôm nay (${dayName}, ${formatDateDMY(dateStr)})`
+                          : `${dayName}, ${formatDateDMY(dateStr)}`;
+                      })()}
+                    </span>
+                    <span className="font-extrabold text-[#0F172A] truncate">
+                      {item.facilityName ? `${item.facilityName} - ${item.shiftName}` : item.title}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-400 shrink-0">
                     {item.time}
                   </span>
                 </div>
@@ -655,7 +724,7 @@ export const ScheduleView: React.FC = () => {
                 <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1.5">
                   <div className="flex justify-between">
                     <span className="text-slate-500">Ca học đăng ký:</span>
-                    <strong className="text-[#0F172A]">{student.shiftName || 'Ca 4'}</strong>
+                    <strong className="text-[#0F172A]">{student.shiftName || 'Ca 1'}</strong>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500">Số buổi học / Số phép:</span>
@@ -770,41 +839,44 @@ export const ScheduleView: React.FC = () => {
       {/* VIEW MODE 1: WEEKLY GRID */}
       {viewMode === 'weekly' && (
         <div className="bg-white rounded-3xl border border-slate-100 shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <div className="min-w-[840px]">
-              {/* Days Header */}
-              <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50/70 text-center divide-x divide-slate-100">
-                {weekDays.map(day => (
+          {/* Mobile Swipe Guidance Bar */}
+          <div className="sm:hidden flex items-center justify-between px-4 py-2 bg-slate-50/80 border-b border-slate-100 text-xs">
+            <span className="text-slate-500 font-medium">👉 Vuốt ngang để xem tiếp các ngày trong tuần</span>
+            <span className="font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 text-[11px]">
+              2 ngày / màn hình
+            </span>
+          </div>
+
+          <div className="overflow-x-auto no-scrollbar snap-x snap-mandatory">
+            <div className="flex sm:grid sm:grid-cols-7 sm:min-w-[840px] divide-x divide-slate-100 min-h-[520px]">
+              {weekDays.map(day => {
+                const daySessions = deduplicatedSessions.filter(s => s.date === day.date);
+                return (
                   <div
                     key={day.date}
-                    className={`py-3.5 px-1 ${
-                      day.isToday ? 'bg-emerald-500/10 text-emerald-950 font-black' : 'text-slate-700'
+                    className={`w-1/2 min-w-[50%] max-w-[50%] sm:w-auto sm:min-w-0 sm:max-w-none flex-shrink-0 snap-start flex flex-col transition-colors ${
+                      day.isToday ? 'bg-emerald-50/20' : 'hover:bg-slate-50/40'
                     }`}
                   >
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                      {day.day}
-                    </div>
-                    <div className="text-base font-extrabold mt-0.5 flex items-center justify-center gap-1">
-                      <span>{day.dayNum}</span>
-                      {day.isToday && <span className="w-2 h-2 rounded-full bg-[#10B981]"></span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Grid Body */}
-              <div className="grid grid-cols-7 divide-x divide-slate-100 min-h-[520px]">
-                {weekDays.map(day => {
-                  const daySessions = deduplicatedSessions.filter(s => s.date === day.date);
-                  return (
+                    {/* Days Header */}
                     <div
-                      key={day.date}
-                      className={`p-2 space-y-2.5 transition-colors ${
-                        day.isToday ? 'bg-emerald-50/20' : 'hover:bg-slate-50/40'
+                      className={`py-3.5 px-2 text-center border-b border-slate-100 ${
+                        day.isToday ? 'bg-emerald-500/10 text-emerald-950 font-black' : 'bg-slate-50/70 text-slate-700'
                       }`}
                     >
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                        {day.day}
+                      </div>
+                      <div className="text-base font-extrabold mt-0.5 flex items-center justify-center gap-1">
+                        <span>{day.dayNum}</span>
+                        {day.isToday && <span className="w-2 h-2 rounded-full bg-[#10B981]"></span>}
+                      </div>
+                    </div>
+
+                    {/* Day Sessions Body */}
+                    <div className="p-2 sm:p-2.5 space-y-2.5 flex-1">
                       {daySessions.length === 0 ? (
-                        <div className="text-center py-10 text-[11px] text-slate-300">
+                        <div className="text-center py-14 text-xs text-slate-300 font-medium">
                           Không có ca
                         </div>
                       ) : (
@@ -830,7 +902,7 @@ export const ScheduleView: React.FC = () => {
                                 </span>
                               </div>
 
-                              {/* 2. Cơ sở (chỉ hiển thị Cầu Giấy, Ba Đình, Thanh Xuân) */}
+                              {/* 2. Cơ sở */}
                               <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 group-hover:text-emerald-700 transition-colors">
                                 <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                                 <span className="truncate" title={facilityDisplay}>
@@ -860,9 +932,9 @@ export const ScheduleView: React.FC = () => {
                         })
                       )}
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

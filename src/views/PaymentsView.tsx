@@ -244,11 +244,6 @@ export const PaymentsView: React.FC = () => {
                           <span>{p.studentName}</span>
                         )}
                       </div>
-                      {p.collectorName && (
-                        <div className="text-[10px] text-slate-400 font-medium">
-                          {p.facilityName || 'CS01'} • Thu bởi: {p.collectorName}
-                        </div>
-                      )}
                     </td>
                     <td className="py-4 px-4 text-xs font-semibold text-slate-700">
                       {p.studentPhone || students.find(s => s.id === p.studentId)?.phone || '—'}

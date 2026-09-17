@@ -109,7 +109,7 @@ export interface ScheduledSession {
   date: string; // 'YYYY-MM-DD', ví dụ: '2026-08-03'
   facilityId: string; // 'CS01'
   facilityName: string; // 'Sân Cầu Lông Cầu Giấy'
-  shiftId: string; // 'CA04'
+  shiftId: string; // 'CA01' | 'CA02' | 'CA03'
   shiftName: string; // 'Ca Tối 1'
   timeSlot?: string; // '18:00 - 19:30'
 }
@@ -236,6 +236,7 @@ export interface SessionSchedule {
   facilityName?: string;
   court: string; // "Sân 02"
   shiftId?: string;
+  shiftName?: string;
   coachId: string;
   coachName: string;
   coachAvatar?: string;
@@ -300,6 +301,7 @@ export interface NotificationItem {
   shiftName?: string;
   timeSlot?: string;
   noteContent?: string;
+  sessionDate?: string;
   senderName?: string;
   linkTo?: {
     tab: string;
@@ -366,4 +368,13 @@ export interface CenterHoliday {
   createdAt: string;
   createdBy: string;
   affectedStudentsCount: number;
+}
+
+// Thông tin xung đột lịch dạy của HLV giữa các cơ sở trong cùng ca học
+export interface CoachConflictInfo {
+  conflictFacilityId: string;
+  conflictFacilityName: string;
+  conflictShiftId: string;
+  conflictShiftName: string;
+  date: string;
 }

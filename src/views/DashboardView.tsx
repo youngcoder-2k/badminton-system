@@ -31,7 +31,9 @@ export const DashboardView: React.FC = () => {
     shifts,
     navigate,
     setAttendanceTarget,
-    facilities
+    facilities,
+    assignedSessions,
+    getDailyClasses
   } = useApp();
 
   // Admin KPIs
@@ -138,16 +140,28 @@ export const DashboardView: React.FC = () => {
     });
   }, [todaySessions, facilities, shifts]);
 
-  // Coach-specific stats (HLV chỉ nhìn ca của mình)
-  const coachClasses = classes.filter(c => c.coachId === currentUser.coachId);
-  const coachStudents = students.filter(s => s.coachId === currentUser.coachId);
-  const coachTodaySessions = todaySessions.filter(
-    s =>
-      s.coachId === (currentUser.coachId || currentUser.id) ||
-      s.coachName === currentUser.name ||
-      (s.coaches && s.coaches.some(c => c.id === (currentUser.coachId || currentUser.id) || c.name === currentUser.name))
-  );
-  const currentCoachData = coaches.find(c => c.id === currentUser.coachId);
+  // Coach-specific stats (HLV chỉ nhìn lớp & ca của mình)
+  const coachTodayClasses = useMemo(() => {
+    if (!isCoach) return [];
+    return getDailyClasses(todayStr, 'ALL');
+  }, [isCoach, getDailyClasses, todayStr]);
+
+  const coachTodaySessions = useMemo(() => {
+    if (!isCoach) return [];
+    return assignedSessions.filter(s => s.date === todayStr);
+  }, [isCoach, assignedSessions, todayStr]);
+
+  const coachMonthTaughtShiftsCount = useMemo(() => {
+    const coachId = currentUser.coachId || currentUser.id;
+    return sessions.filter(
+      s =>
+        (s.coachId === coachId ||
+         s.coachName === currentUser.name ||
+         s.coachIds?.includes(coachId) ||
+         (s.coaches && s.coaches.some(c => c.id === coachId || c.name === currentUser.name))) &&
+        Boolean(s.coachAttendanceDone)
+    ).length;
+  }, [sessions, currentUser]);
 
   const handleStartAttendance = (classId: string, sessionId: string, facilityId?: string) => {
     setAttendanceTarget({ classId, date: todayStr, sessionId, facilityId });
@@ -175,7 +189,7 @@ export const DashboardView: React.FC = () => {
               <p className="text-slate-300 text-sm max-w-xl">
                 Hôm nay ({todayDateFormatted}) bạn có{' '}
                 <span className="text-[#A3E635] font-bold">
-                  {coachTodaySessions.length} buổi dạy
+                  {coachTodayClasses.length} lớp học được phân công
                 </span>
                 . Vui lòng hoàn thành điểm danh ngay sau mỗi ca tập.
               </p>
@@ -206,55 +220,73 @@ export const DashboardView: React.FC = () => {
           </div>
         </div>
 
-        {/* Coach 4 KPIs */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-xs hover:border-emerald-200 transition-colors">
-            <div className="flex items-center justify-between text-slate-500 mb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Buổi hôm nay</span>
-              <div className="p-2 rounded-lg bg-emerald-50 text-[#10B981]">
-                <Calendar className="w-4 h-4" />
+        {/* Coach 2 KPIs: Lớp được phân công hôm nay & Ca đã dạy trong tháng */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+          {/* Card 1: Số lớp được phân công dạy ngày hôm nay */}
+          <div
+            onClick={() => navigate('classes')}
+            className="p-5 sm:p-6 bg-white rounded-3xl border border-slate-200/80 shadow-xs hover:border-emerald-300 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+            title="Bấm để xem danh sách lớp học hôm nay"
+          >
+            <div>
+              <div className="flex items-center justify-between text-slate-500 mb-3">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-500 group-hover:text-emerald-700 transition-colors">
+                  Số lớp được phân công dạy hôm nay
+                </span>
+                <div className="p-2.5 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                  <BookOpen className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl sm:text-4xl font-black text-[#0F172A] tracking-tight group-hover:text-emerald-700 transition-colors">
+                  {coachTodayClasses.length}
+                </span>
+                <span className="text-sm font-extrabold text-slate-500">lớp học</span>
               </div>
             </div>
-            <div className="text-2xl sm:text-3xl font-bold text-[#0F172A]">{coachTodaySessions.length}</div>
-            <div className="text-xs text-slate-400 mt-1">Lịch dạy hôm nay</div>
+
+            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium truncate max-w-[200px] sm:max-w-none">
+                {coachTodayClasses.length > 0
+                  ? `${coachTodayClasses.map(c => c.shiftName || 'Ca học').join(', ')} • ${coachTodayClasses[0]?.facilityName || 'Tại sân'}`
+                  : 'Chưa có lớp phân công'}
+              </span>
+              <span className="text-emerald-600 font-extrabold flex items-center gap-1 group-hover:translate-x-1 transition-transform shrink-0">
+                Xem lớp học →
+              </span>
+            </div>
           </div>
 
-          <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-xs hover:border-emerald-200 transition-colors">
-            <div className="flex items-center justify-between text-slate-500 mb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Học viên</span>
-              <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
-                <Users className="w-4 h-4" />
+          {/* Card 2: Số ca đã dạy trong tháng */}
+          <div
+            onClick={() => navigate('coaches')}
+            className="p-5 sm:p-6 bg-white rounded-3xl border border-slate-200/80 shadow-xs hover:border-emerald-300 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+            title="Bấm để xem chi tiết lịch ca dạy đã đăng ký"
+          >
+            <div>
+              <div className="flex items-center justify-between text-slate-500 mb-3">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-500 group-hover:text-emerald-700 transition-colors">
+                  Số ca đã dạy trong tháng
+                </span>
+                <div className="p-2.5 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                  <Activity className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl sm:text-4xl font-black text-emerald-700 tracking-tight">
+                  {coachMonthTaughtShiftsCount}
+                </span>
+                <span className="text-sm font-extrabold text-emerald-600">ca đã dạy</span>
               </div>
             </div>
-            <div className="text-2xl sm:text-3xl font-bold text-[#0F172A]">{coachStudents.length}</div>
-            <div className="text-xs text-slate-400 mt-1">Tổng học viên phụ trách</div>
-          </div>
 
-          <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-xs hover:border-emerald-200 transition-colors">
-            <div className="flex items-center justify-between text-slate-500 mb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Đã điểm danh</span>
-              <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
-                <CheckCircle2 className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="text-2xl sm:text-3xl font-bold text-[#0F172A]">
-              {coachTodaySessions.filter(s => s.attendanceDone).length}/{coachTodaySessions.length}
-            </div>
-            <div className="text-xs text-slate-400 mt-1">Tiến độ hôm nay</div>
-          </div>
-
-          <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-xs hover:border-emerald-200 transition-colors">
-            <div className="flex items-center justify-between text-slate-500 mb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Số buổi tháng này</span>
-              <div className="p-2 rounded-lg bg-orange-50 text-orange-600">
-                <Activity className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="text-2xl sm:text-3xl font-bold text-[#0F172A]">
-              {currentCoachData?.taughtSessionsMonth || 18}
-            </div>
-            <div className="text-xs text-slate-400 mt-1">
-              Đạt ~{(currentCoachData?.taughtHoursMonth || 27)} giờ dạy
+            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">
+                Kỳ Tháng 08/2026 • Đã xác nhận điểm danh
+              </span>
+              <span className="text-emerald-600 font-extrabold flex items-center gap-1 group-hover:translate-x-1 transition-transform shrink-0">
+                Xem chi tiết ca dạy →
+              </span>
             </div>
           </div>
         </div>
@@ -359,7 +391,7 @@ export const DashboardView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0F172A] tracking-tight">
-            Dashboard
+            Trang Chủ
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
             Tổng quan hoạt động và theo dõi lớp cầu lông ({todayDateFormatted})

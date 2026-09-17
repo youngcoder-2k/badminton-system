@@ -22,10 +22,11 @@ import {
   Bell,
   MessageSquare,
   PartyPopper,
-  Lock
+  Lock,
+  Trash2
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { AttendanceStatus, CoachAttendanceRecord } from '../types';
+import { AttendanceRecordItem, AttendanceStatus, CoachAttendanceRecord } from '../types';
 import { Modal } from '../components/common/Modal';
 import { MonthlyAttendanceMatrix } from '../components/attendance/MonthlyAttendanceMatrix';
 
@@ -47,6 +48,7 @@ export const AttendanceView: React.FC = () => {
     saveCoachAttendance,
     saveUnifiedAttendance,
     addMakeupStudentToSession,
+    removeMakeupStudentFromSession,
     currentUser,
     isCoach,
     isFacilityManager,
@@ -65,16 +67,22 @@ export const AttendanceView: React.FC = () => {
 
   const [viewTab, setViewTab] = useState<'session' | 'monthly'>('session');
 
-  // Cơ sở mặc định: Quản lý sân -> sân mình quản lý; Admin -> CS đầu tiên hoặc từ target
-  const defaultFacilityId = (currentUser.role === 'FACILITY_MANAGER' && currentUser.facilityId)
+  // Cơ sở mặc định: Quản lý sân -> LUÔN LUÔN là sân mình quản lý; Admin -> CS đầu tiên hoặc từ target
+  const defaultFacilityId = (isFacilityManager && currentUser.facilityId)
     ? currentUser.facilityId
-    : (currentUser.role === 'COACH' && (currentUser as any).assignedFacilityId)
+    : (isCoach && (currentUser as any).assignedFacilityId)
     ? (currentUser as any).assignedFacilityId
     : (facilities[0]?.id || 'CS01');
 
-  const [selectedFacilityId, setSelectedFacilityId] = useState<string>(attendanceTarget?.facilityId || defaultFacilityId);
+  const [selectedFacilityId, setSelectedFacilityId] = useState<string>(() => {
+    if (isFacilityManager && currentUser.facilityId) {
+      return currentUser.facilityId;
+    }
+    return attendanceTarget?.facilityId || defaultFacilityId;
+  });
   const [selectedDate, setSelectedDate] = useState<string>(attendanceTarget?.date || '2026-08-28');
   const [selectedShiftId, setSelectedShiftId] = useState<string>(() => {
+    if (attendanceTarget?.shiftId) return attendanceTarget.shiftId;
     if (attendanceTarget?.sessionId) {
       const s = sessions.find(sess => sess.id === attendanceTarget.sessionId);
       if (s?.shiftId) return s.shiftId;
@@ -82,6 +90,9 @@ export const AttendanceView: React.FC = () => {
     if (attendanceTarget?.classId) {
       const c = classes.find(cls => cls.id === attendanceTarget.classId);
       if (c?.shiftId) return c.shiftId;
+      if (attendanceTarget.classId.startsWith('CLS_')) {
+        return attendanceTarget.classId.split('_')[2];
+      }
     }
     return 'CA02'; // Mặc định Ca 1 (18:00 - 19:30)
   });
@@ -98,12 +109,14 @@ export const AttendanceView: React.FC = () => {
 
   const isCoachRestricted = isCoach && !isSelectedDateToday;
 
-  // Đồng bộ cơ sở nếu người dùng là Quản lý sân (không cho đổi sân khác khi không có target cụ thể)
+  // Tuyệt đối đảm bảo Quản lý cơ sở luôn luôn ở đúng cơ sở do mình quản lý
   useEffect(() => {
-    if (isFacilityManager && currentUser.facilityId && !attendanceTarget?.facilityId) {
-      setSelectedFacilityId(currentUser.facilityId);
+    if (isFacilityManager && currentUser.facilityId) {
+      if (selectedFacilityId !== currentUser.facilityId) {
+        setSelectedFacilityId(currentUser.facilityId);
+      }
     }
-  }, [currentUser.id, currentUser.facilityId, isFacilityManager, attendanceTarget?.facilityId]);
+  }, [currentUser.id, currentUser.facilityId, isFacilityManager, selectedFacilityId]);
 
   // Local state cho từng HLV
   const [coachAttendanceStates, setCoachAttendanceStates] = useState<Record<string, {
@@ -122,22 +135,46 @@ export const AttendanceView: React.FC = () => {
   useEffect(() => {
     if (attendanceTarget) {
       if (attendanceTarget.facilityId) {
-        setSelectedFacilityId(attendanceTarget.facilityId);
+        if (!isFacilityManager || attendanceTarget.facilityId === currentUser.facilityId) {
+          setSelectedFacilityId(attendanceTarget.facilityId);
+        }
       }
       if (attendanceTarget.date) setSelectedDate(attendanceTarget.date);
-      if (attendanceTarget.sessionId) {
+      if (attendanceTarget.shiftId) {
+        setSelectedShiftId(attendanceTarget.shiftId);
+      } else if (attendanceTarget.sessionId) {
         const s = sessions.find(sess => sess.id === attendanceTarget.sessionId);
         if (s?.shiftId) setSelectedShiftId(s.shiftId);
+        if (s?.facilityId && (!isFacilityManager || s.facilityId === currentUser.facilityId)) {
+          setSelectedFacilityId(s.facilityId);
+        }
       } else if (attendanceTarget.classId) {
-        const c = classes.find(cls => cls.id === attendanceTarget.classId);
-        if (c?.shiftId) setSelectedShiftId(c.shiftId);
+        if (attendanceTarget.classId.startsWith('CLS_')) {
+          const parts = attendanceTarget.classId.split('_');
+          if (parts[2]) setSelectedShiftId(parts[2]);
+          if (parts[1] && (!isFacilityManager || parts[1] === currentUser.facilityId)) {
+            setSelectedFacilityId(parts[1]);
+          }
+        } else {
+          const c = classes.find(cls => cls.id === attendanceTarget.classId);
+          if (c?.shiftId) setSelectedShiftId(c.shiftId);
+          if (c?.facilityId && (!isFacilityManager || c.facilityId === currentUser.facilityId)) {
+            setSelectedFacilityId(c.facilityId);
+          }
+        }
       }
     }
-  }, [attendanceTarget, sessions, classes]);
+  }, [attendanceTarget, sessions, classes, isFacilityManager, currentUser.facilityId]);
 
   // Thông tin cơ sở hiện tại
-  const currentFacility = facilities.find(f => f.id === selectedFacilityId) || facilities[0];
-  const currentFacilityName = currentFacility?.name || 'Sân Cầu Lông Cầu Giấy';
+  const effectiveFacilityId = (isFacilityManager && currentUser.facilityId)
+    ? currentUser.facilityId
+    : selectedFacilityId;
+
+  const currentFacility = facilities.find(f => f.id === effectiveFacilityId) ||
+    (isFacilityManager && currentUser.facilityId ? facilities.find(f => f.id === currentUser.facilityId) : facilities[0]);
+  const currentFacilityName = currentFacility?.name ||
+    (isFacilityManager && currentUser.facilityName ? currentUser.facilityName : 'Triều Khúc');
 
   // Danh sách lớp tại cơ sở này
   const facilityClasses = classes.filter(c => c.facilityId === selectedFacilityId);
@@ -158,7 +195,36 @@ export const AttendanceView: React.FC = () => {
         s.date === selectedDate &&
         s.shiftId === selectedShiftId
     );
-  const sessionMakeupStudents = targetSession?.makeupStudents || [];
+  const sessionMakeupStudents = useMemo(() => {
+    const list: AttendanceRecordItem[] = [];
+    const addRecord = (item: AttendanceRecordItem) => {
+      const sid = item.studentId || (item as any).id;
+      if (sid && !list.some(m => (m.studentId || (m as any).id) === sid)) {
+        list.push({ ...item, studentId: sid });
+      }
+    };
+
+    if (targetSession?.makeupStudents) {
+      targetSession.makeupStudents.forEach(addRecord);
+    }
+    if (targetSession?.attendanceRecords) {
+      targetSession.attendanceRecords.filter(r => r.isMakeup).forEach(addRecord);
+    }
+
+    sessions
+      .filter(
+        s =>
+          s.date === selectedDate &&
+          (s.facilityId === selectedFacilityId || facilityClassIds.includes(s.classId)) &&
+          (!s.shiftId || s.shiftId === selectedShiftId)
+      )
+      .forEach(s => {
+        (s.makeupStudents || []).forEach(addRecord);
+        (s.attendanceRecords || []).filter(r => r.isMakeup).forEach(addRecord);
+      });
+
+    return list;
+  }, [targetSession, sessions, selectedDate, selectedFacilityId, selectedShiftId, facilityClassIds]);
 
   // Danh sách các ca học thực tế hôm nay tại cơ sở này để lấy ghi chú nhắc nhở từ Quản lý
   const facilityDailyClasses = useMemo(() => {
@@ -270,6 +336,45 @@ export const AttendanceView: React.FC = () => {
       }
     });
 
+    // 2.5 Từ các ca học thực tế theo ngày & phân công động (facilityDailyClasses)
+    facilityDailyClasses.forEach(dc => {
+      const assignedCoachesList = (dc.coaches && dc.coaches.length > 0)
+        ? dc.coaches
+        : dc.coachId
+        ? coaches.filter(c => c.id === dc.coachId || dc.coachIds?.includes(c.id))
+        : [];
+
+      assignedCoachesList.forEach(c => {
+        if (!c) return;
+        if (!seenCoachIds.has(c.id)) {
+          seenCoachIds.add(c.id);
+          const virtualSessionId = `sess-${selectedFacilityId}-${dc.id}-${selectedShiftId}-${selectedDate}`;
+          const existingSession = sessions.find(
+            s =>
+              s.id === virtualSessionId ||
+              s.classId === dc.id ||
+              (s.facilityId === selectedFacilityId && s.date === selectedDate && s.shiftId === selectedShiftId)
+          );
+
+          items.push({
+            key: `daily_${dc.id}_${c.id}`,
+            sessionId: existingSession?.id || virtualSessionId,
+            coachId: c.id,
+            coachName: c.name,
+            coachAvatar: c.avatar,
+            coachPhone: c.phone,
+            classId: dc.id,
+            className: dc.name,
+            timeSlot: dc.timeSlot || '18:00 - 19:30',
+            court: dc.court || 'Sân cơ sở',
+            session: existingSession,
+            isAttended: Boolean(existingSession?.coachAttendanceDone),
+            attendanceRecord: existingSession?.coachAttendance
+          });
+        }
+      });
+    });
+
     // 3. Nếu chưa có lớp nào vào thứ này, lấy danh sách HLV được gán cơ sở này
     if (items.length === 0) {
       const facilityAssignedCoaches = coaches.filter(c =>
@@ -304,9 +409,40 @@ export const AttendanceView: React.FC = () => {
     }
 
     return items;
-  }, [facilitySessions, facilityClasses, coaches, selectedDayOfWeek, selectedFacilityId, selectedDate, selectedShiftId, sessions, isCoach, currentUser]);
+  }, [facilitySessions, facilityClasses, coaches, selectedDayOfWeek, selectedFacilityId, selectedDate, selectedShiftId, sessions, isCoach, currentUser, facilityDailyClasses]);
 
   const classStudents = students.filter(student => {
+    // 0. Tuyệt đối không bao gồm học viên đã có trong danh sách học bù của ca học này
+    const isMakeupInThisShift =
+      sessionMakeupStudents.some(
+        m =>
+          (m.studentId || (m as any).id) === student.id ||
+          (m.studentName && m.studentName.trim().toLowerCase() === student.name.trim().toLowerCase())
+      ) ||
+      sessions.some(
+        s =>
+          s.date === selectedDate &&
+          (s.facilityId === selectedFacilityId || facilityClassIds.includes(s.classId)) &&
+          (!s.shiftId || s.shiftId === selectedShiftId) &&
+          (
+            s.makeupStudents?.some(
+              m =>
+                (m.studentId || (m as any).id) === student.id ||
+                (m.studentName && m.studentName.trim().toLowerCase() === student.name.trim().toLowerCase())
+            ) ||
+            s.attendanceRecords?.some(
+              r =>
+                r.isMakeup &&
+                ((r.studentId || (r as any).id) === student.id ||
+                  (r.studentName && r.studentName.trim().toLowerCase() === student.name.trim().toLowerCase()))
+            )
+          )
+      );
+
+    if (isMakeupInThisShift) {
+      return false;
+    }
+
     // 1. Nếu học viên có lịch học chi tiết từng buổi theo ngày & cơ sở & ca (scheduledSessions)
     if (student.scheduledSessions && student.scheduledSessions.length > 0) {
       const todaySession = student.scheduledSessions.find(s => s.date === selectedDate);
@@ -354,8 +490,12 @@ export const AttendanceView: React.FC = () => {
     if (studentClass && studentClass.scheduleDays && studentClass.scheduleDays.length > 0) {
       return studentClass.scheduleDays.includes(selectedDayOfWeek);
     }
-    // Hoặc đã có trong bản ghi điểm danh ca này
-    if (targetSession && targetSession.attendanceRecords?.some(r => r.studentId === student.id)) {
+    // Hoặc có trong danh sách học viên của ca học theo ngày (facilityDailyClasses)
+    if (facilityDailyClasses.some(dc => dc.studentIds.includes(student.id))) {
+      return true;
+    }
+    // Hoặc đã có trong bản ghi điểm danh ca này (chỉ học viên chính thức, không tính học bù)
+    if (targetSession && targetSession.attendanceRecords?.some(r => r.studentId === student.id && !r.isMakeup)) {
       return true;
     }
     return student.status === 'Studying';
@@ -509,9 +649,39 @@ export const AttendanceView: React.FC = () => {
     setAttendanceMap(updated);
   };
 
-  const presentCount = Object.values(attendanceMap).filter(s => s === 'Present').length;
-  const excusedCount = Object.values(attendanceMap).filter(s => s === 'Excused').length;
-  const absentCount = Object.values(attendanceMap).filter(s => s === 'Absent').length;
+  const allActiveStudentIds = useMemo(() => {
+    const set = new Set<string>();
+    classStudents.forEach(s => set.add(s.id));
+    sessionMakeupStudents.forEach(m => {
+      const sid = m.studentId || (m as any).id;
+      if (sid) set.add(sid);
+    });
+    return set;
+  }, [classStudents, sessionMakeupStudents]);
+
+  const presentCount = useMemo(() => {
+    let count = 0;
+    allActiveStudentIds.forEach(id => {
+      if ((attendanceMap[id] || 'Present') === 'Present') count++;
+    });
+    return count;
+  }, [allActiveStudentIds, attendanceMap]);
+
+  const excusedCount = useMemo(() => {
+    let count = 0;
+    allActiveStudentIds.forEach(id => {
+      if (attendanceMap[id] === 'Excused') count++;
+    });
+    return count;
+  }, [allActiveStudentIds, attendanceMap]);
+
+  const absentCount = useMemo(() => {
+    let count = 0;
+    allActiveStudentIds.forEach(id => {
+      if (attendanceMap[id] === 'Absent') count++;
+    });
+    return count;
+  }, [allActiveStudentIds, attendanceMap]);
 
   const isAllCoachesAttended = facilityCoachItems.length > 0 && facilityCoachItems.every(c => c.isAttended);
   const isEverythingAttended = isStudentAttendanceDone && (facilityCoachItems.length === 0 || isAllCoachesAttended);
@@ -655,23 +825,25 @@ export const AttendanceView: React.FC = () => {
     const targetStudents = students.filter(s => selectedMakeupStudentIds.includes(s.id));
     if (targetStudents.length === 0) return;
 
-    const sessionId = targetSession ? targetSession.id : `sess-${selectedFacilityId}-${selectedDate}`;
-
-    // Tìm ca học hiện tại tại cơ sở để đồng bộ thông tin ca và cơ sở
     const activeShift =
+      shifts?.find(sh => sh.id === selectedShiftId) ||
       (targetSession?.shiftId && shifts?.find(sh => sh.id === targetSession.shiftId)) ||
       (facilityDailyClasses.length > 0 &&
         facilityDailyClasses[0].shiftId &&
         shifts?.find(sh => sh.id === facilityDailyClasses[0].shiftId)) ||
-      shifts?.[0] || { id: 'CA01', name: 'Ca sáng', timeSlot: '06:00 - 07:30' };
+      shifts?.[0] || { id: selectedShiftId || 'CA01', name: 'Ca tập', timeSlot: '18:00 - 19:30' };
+
+    const sessionId = targetSession
+      ? targetSession.id
+      : `sess-${selectedFacilityId}-${selectedShiftId || activeShift.id}-${selectedDate}`;
 
     const sessionMeta = {
       date: selectedDate,
       facilityId: selectedFacilityId,
       facilityName: formatCleanFacilityName(currentFacilityName),
-      shiftId: activeShift?.id || 'CA01',
-      shiftName: activeShift?.name || facilityDailyClasses[0]?.shiftName || 'Ca sáng',
-      timeSlot: activeShift?.timeSlot || facilityDailyClasses[0]?.timeSlot || '06:00 - 07:30'
+      shiftId: selectedShiftId || activeShift.id || 'CA01',
+      shiftName: activeShift?.name || facilityDailyClasses[0]?.shiftName || 'Ca tập',
+      timeSlot: activeShift?.timeSlot || facilityDailyClasses[0]?.timeSlot || '18:00 - 19:30'
     };
 
     targetStudents.forEach(st => {
@@ -680,7 +852,7 @@ export const AttendanceView: React.FC = () => {
 
     if (targetStudents.length > 1) {
       showToast(
-        `Đã thêm ${targetStudents.length} học viên học bù & đồng bộ lịch ca sang ${formatCleanFacilityName(currentFacilityName)} thành công!`,
+        `Đã thêm ${targetStudents.length} học viên vào danh sách học bù ca này thành công!`,
         'success'
       );
     }
@@ -1034,7 +1206,7 @@ export const AttendanceView: React.FC = () => {
             return (
               <div
                 key={item.key}
-                className={`py-2 px-3 sm:px-4 bg-white rounded-2xl border transition-all shadow-2xs flex items-center justify-between gap-3 ${
+                className={`p-3 sm:py-2.5 sm:px-4 bg-white rounded-2xl border transition-all shadow-2xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3 ${
                   isAttended
                     ? 'bg-slate-50/70 border-slate-200'
                     : itemState.status === 'Present'
@@ -1044,24 +1216,72 @@ export const AttendanceView: React.FC = () => {
                     : 'border-rose-300 ring-1 ring-rose-500/20'
                 }`}
               >
-                {/* Coach Info */}
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-5 text-center font-bold text-slate-400 text-xs shrink-0">
-                    #{index + 1}
+                {/* Coach Info Row */}
+                <div className="flex items-center justify-between min-w-0 w-full sm:w-auto">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-5 text-center font-bold text-slate-400 text-xs shrink-0">
+                      #{index + 1}
+                    </div>
+                    <img
+                      src={item.coachAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150'}
+                      alt={item.coachName}
+                      className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl object-cover ring-1 ring-indigo-50 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-sm font-extrabold text-[#0F172A] truncate">
+                        {item.coachName}
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-medium sm:hidden">
+                        Huấn luyện viên phụ trách
+                      </div>
+                    </div>
                   </div>
-                  <img
-                    src={item.coachAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150'}
-                    alt={item.coachName}
-                    className="w-8 h-8 rounded-xl object-cover ring-1 ring-indigo-50 shrink-0"
-                  />
-                  <span className="text-sm font-bold text-[#0F172A] truncate">
-                    {item.coachName}
-                  </span>
+
+                  {/* Mobile Attended Badge & Edit button */}
+                  {isAttended && !itemState.isEditing && (
+                    <div className="sm:hidden flex items-center gap-1.5 shrink-0">
+                      <div className={`px-2 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1 border ${
+                        rec?.status === 'Present'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : rec?.status === 'Late'
+                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                          : 'bg-rose-50 text-rose-800 border-rose-200'
+                      }`}>
+                        {rec?.status === 'Present' && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                        {rec?.status === 'Late' && <Clock className="w-3 h-3 text-amber-600" />}
+                        {rec?.status === 'Absent' && <XCircle className="w-3 h-3 text-rose-600" />}
+                        <span>
+                          {rec?.status === 'Present'
+                            ? 'CÓ MẶT'
+                            : rec?.status === 'Late'
+                            ? 'ĐI MUỘN'
+                            : 'VẮNG'}
+                        </span>
+                      </div>
+                      {!isCoach && !isFacilityManagerLocked && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCoachAttendanceStates(prev => ({
+                              ...prev,
+                              [item.key]: {
+                                ...itemState,
+                                isEditing: true
+                              }
+                            }));
+                          }}
+                          className="px-2 py-0.5 text-[11px] font-bold text-slate-600 bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                        >
+                          Sửa
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Right Actions / Status */}
                 {isAttended && !itemState.isEditing ? (
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="hidden sm:flex items-center gap-1.5 shrink-0">
                     <div className={`px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1 border ${
                       rec?.status === 'Present'
                         ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
@@ -1100,8 +1320,8 @@ export const AttendanceView: React.FC = () => {
                     )}
                   </div>
                 ) : !isCoach && !isFacilityManagerLocked ? (
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <div className="grid grid-cols-3 gap-1.5">
+                  <div className="w-full sm:w-auto shrink-0 flex items-center gap-1.5">
+                    <div className="grid grid-cols-3 gap-1.5 w-full sm:w-auto flex-1">
                       <button
                         type="button"
                         onClick={() => {
@@ -1113,13 +1333,13 @@ export const AttendanceView: React.FC = () => {
                             }
                           }));
                         }}
-                        className={`py-1.5 px-3 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-95 ${
+                        className={`py-2 sm:py-1.5 px-2 sm:px-3 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-95 min-h-[38px] sm:min-h-0 ${
                           itemState.status === 'Present'
                             ? 'bg-emerald-600 text-white shadow-xs'
-                            : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200/80'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200/80'
                         }`}
                       >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                         <span>CÓ MẶT</span>
                       </button>
                       <button
@@ -1133,13 +1353,13 @@ export const AttendanceView: React.FC = () => {
                             }
                           }));
                         }}
-                        className={`py-1.5 px-3 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-95 ${
+                        className={`py-2 sm:py-1.5 px-2 sm:px-3 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-95 min-h-[38px] sm:min-h-0 ${
                           itemState.status === 'Late'
                             ? 'bg-amber-500 text-white shadow-xs'
-                            : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200/80'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200/80'
                         }`}
                       >
-                        <Clock className="w-3.5 h-3.5" />
+                        <Clock className="w-3.5 h-3.5 shrink-0" />
                         <span>ĐI MUỘN</span>
                       </button>
                       <button
@@ -1153,13 +1373,13 @@ export const AttendanceView: React.FC = () => {
                             }
                           }));
                         }}
-                        className={`py-1.5 px-3 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-95 ${
+                        className={`py-2 sm:py-1.5 px-2 sm:px-3 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-95 min-h-[38px] sm:min-h-0 ${
                           itemState.status === 'Absent'
                             ? 'bg-rose-600 text-white shadow-xs'
-                            : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200/80'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200/80'
                         }`}
                       >
-                        <XCircle className="w-3.5 h-3.5" />
+                        <XCircle className="w-3.5 h-3.5 shrink-0" />
                         <span>VẮNG</span>
                       </button>
                     </div>
@@ -1176,7 +1396,7 @@ export const AttendanceView: React.FC = () => {
                             }
                           }));
                         }}
-                        className="px-2 py-1 text-xs font-bold text-slate-500 hover:text-slate-700 bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                        className="px-2.5 py-2 sm:py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 bg-slate-100 rounded-xl transition-colors cursor-pointer shrink-0"
                       >
                         Xong
                       </button>
@@ -1238,7 +1458,7 @@ export const AttendanceView: React.FC = () => {
             return (
               <div
                 key={student.id}
-                className={`py-2 px-3 sm:px-4 bg-white rounded-2xl border transition-all shadow-2xs flex items-center justify-between gap-3 ${
+                className={`py-2 px-3 sm:px-4 bg-white rounded-2xl border transition-all shadow-2xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3 ${
                   currentStatus === 'Present'
                     ? 'border-emerald-300 ring-1 ring-[#10B981]/20'
                     : currentStatus === 'Excused'
@@ -1246,33 +1466,64 @@ export const AttendanceView: React.FC = () => {
                     : 'border-rose-300 ring-1 ring-rose-500/20'
                 }`}
               >
-                {/* Student Info */}
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-5 text-center font-bold text-slate-400 text-xs shrink-0">
-                    #{index + 1}
+                {/* Student Info Row */}
+                <div className="flex items-center justify-between min-w-0 w-full sm:w-auto">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-5 text-center font-bold text-slate-400 text-xs shrink-0">
+                      #{index + 1}
+                    </div>
+                    <img
+                      src={student.avatar}
+                      alt={student.name}
+                      className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl object-cover border border-slate-100 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="font-extrabold text-[#0F172A] text-sm truncate">
+                        {student.name}
+                      </div>
+                      <div className="text-[10px] text-slate-400 flex items-center gap-1.5 truncate">
+                        {student.phone ? <span>{student.phone}</span> : <span>Học viên</span>}
+                        <span>•</span>
+                        <span className={isOutOfLeaves ? 'text-rose-600 font-bold' : 'text-slate-500'}>
+                          Phép: {student.usedLeaves || 0}/{allowedLeaves}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <img
-                    src={student.avatar}
-                    alt={student.name}
-                    className="w-8 h-8 rounded-xl object-cover border border-slate-100 shrink-0"
-                  />
-                  <h3 className="font-bold text-[#0F172A] text-sm truncate">{student.name}</h3>
+
+                  {/* Active status indicator badge on mobile */}
+                  <div className="sm:hidden shrink-0 pl-1">
+                    <span className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold flex items-center gap-1 border ${
+                      currentStatus === 'Present'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : currentStatus === 'Excused'
+                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                        : 'bg-rose-50 text-rose-800 border-rose-200'
+                    }`}>
+                      {currentStatus === 'Present' && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                      {currentStatus === 'Excused' && <AlertCircle className="w-3 h-3 text-amber-600" />}
+                      {currentStatus === 'Absent' && <XCircle className="w-3 h-3 text-rose-600" />}
+                      <span>
+                        {currentStatus === 'Present' ? 'CÓ MẶT' : currentStatus === 'Excused' ? 'CÓ PHÉP' : 'VẮNG'}
+                      </span>
+                    </span>
+                  </div>
                 </div>
 
-                {/* 3 Compact Buttons (CÓ MẶT / CÓ PHÉP / VẮNG) */}
-                <div className="flex items-center gap-1.5 shrink-0">
+                {/* 3 Action Buttons (CÓ MẶT / CÓ PHÉP / VẮNG) */}
+                <div className="grid grid-cols-3 gap-1.5 w-full sm:w-auto shrink-0">
                   <button
                     type="button"
                     disabled={isLocked}
                     onClick={() => handleStatusChange(student.id, 'Present')}
-                    className={`py-1.5 px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1 ${
+                    className={`py-2 sm:py-1.5 px-2 sm:px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1 min-h-[38px] sm:min-h-0 ${
                       isLocked
                         ? 'cursor-default'
                         : 'active:scale-95 cursor-pointer'
                     } ${
                       currentStatus === 'Present'
                         ? 'bg-[#10B981] text-white shadow-xs'
-                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200/80'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80 border border-slate-200/80'
                     }`}
                     title={
                       isCoachRestricted
@@ -1282,7 +1533,7 @@ export const AttendanceView: React.FC = () => {
                         : undefined
                     }
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                     <span>CÓ MẶT</span>
                   </button>
 
@@ -1300,7 +1551,7 @@ export const AttendanceView: React.FC = () => {
                       }
                       handleStatusChange(student.id, 'Excused');
                     }}
-                    className={`py-1.5 px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1 ${
+                    className={`py-2 sm:py-1.5 px-2 sm:px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1 min-h-[38px] sm:min-h-0 ${
                       isOutOfLeaves
                         ? 'bg-slate-100 text-slate-300 cursor-not-allowed border border-dashed border-slate-200 opacity-60'
                         : isLocked
@@ -1310,7 +1561,7 @@ export const AttendanceView: React.FC = () => {
                       currentStatus === 'Excused'
                         ? 'bg-amber-500 text-white shadow-xs'
                         : !isOutOfLeaves
-                        ? 'bg-slate-100 text-slate-500 hover:bg-slate-200/80'
+                        ? 'bg-slate-100 text-slate-600 hover:bg-slate-200/80 border border-slate-200/80'
                         : ''
                     }`}
                     title={
@@ -1323,7 +1574,7 @@ export const AttendanceView: React.FC = () => {
                         : 'Nghỉ có phép'
                     }
                   >
-                    <AlertCircle className="w-3.5 h-3.5" />
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                     <span>{isOutOfLeaves ? 'HẾT PHÉP' : 'CÓ PHÉP'}</span>
                   </button>
 
@@ -1331,14 +1582,14 @@ export const AttendanceView: React.FC = () => {
                     type="button"
                     disabled={isLocked}
                     onClick={() => handleStatusChange(student.id, 'Absent')}
-                    className={`py-1.5 px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1 ${
+                    className={`py-2 sm:py-1.5 px-2 sm:px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1 min-h-[38px] sm:min-h-0 ${
                       isLocked
                         ? 'cursor-default'
                         : 'active:scale-95 cursor-pointer'
                     } ${
                       currentStatus === 'Absent'
                         ? 'bg-rose-600 text-white shadow-xs'
-                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200/80'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80 border border-slate-200/80'
                     }`}
                     title={
                       isCoachRestricted
@@ -1348,7 +1599,7 @@ export const AttendanceView: React.FC = () => {
                         : undefined
                     }
                   >
-                    <XCircle className="w-3.5 h-3.5" />
+                    <XCircle className="w-3.5 h-3.5 shrink-0" />
                     <span>VẮNG</span>
                   </button>
                 </div>
@@ -1379,101 +1630,164 @@ export const AttendanceView: React.FC = () => {
             return (
               <div
                 key={makeup.studentId}
-                className="py-2 px-3 sm:px-4 bg-amber-50/40 rounded-2xl border border-amber-200/90 transition-all shadow-2xs flex items-center justify-between gap-3"
+                className="py-2 px-3 sm:px-4 bg-amber-50/40 rounded-2xl border border-amber-200/90 transition-all shadow-2xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3"
               >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-5 text-center font-bold text-amber-700 text-xs shrink-0">
-                    #{index + 1}
+                {/* Student Info Row */}
+                <div className="flex items-center justify-between min-w-0 w-full sm:w-auto">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-5 text-center font-bold text-amber-700 text-xs shrink-0">
+                      #{index + 1}
+                    </div>
+                    <img
+                      src={makeup.studentAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120'}
+                      alt={makeup.studentName}
+                      className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl object-cover border border-amber-200 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <div className="font-extrabold text-[#0F172A] text-sm truncate">
+                          {makeup.studentName}
+                        </div>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200 shrink-0">
+                          Học bù
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 flex items-center gap-1.5 truncate">
+                        {makeup.note ? <span>{makeup.note}</span> : <span>Từ: {makeup.fromClassName || 'Lớp khác'}</span>}
+                      </div>
+                    </div>
                   </div>
-                  <img
-                    src={makeup.studentAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120'}
-                    alt={makeup.studentName}
-                    className="w-8 h-8 rounded-xl object-cover border border-amber-200 shrink-0"
-                  />
-                  <h3 className="font-bold text-[#0F172A] text-sm truncate">{makeup.studentName}</h3>
+
+                  {/* Actions on top row for mobile: trash button + status badge */}
+                  <div className="flex items-center gap-1.5 shrink-0 sm:hidden">
+                    <span className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold flex items-center gap-1 border ${
+                      currentStatus === 'Present'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : currentStatus === 'Excused'
+                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                        : 'bg-rose-50 text-rose-800 border-rose-200'
+                    }`}>
+                      {currentStatus === 'Present' && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                      {currentStatus === 'Excused' && <AlertCircle className="w-3 h-3 text-amber-600" />}
+                      {currentStatus === 'Absent' && <XCircle className="w-3 h-3 text-rose-600" />}
+                      <span>
+                        {currentStatus === 'Present' ? 'CÓ MẶT' : currentStatus === 'Excused' ? 'CÓ PHÉP' : 'VẮNG'}
+                      </span>
+                    </span>
+
+                    {!isLocked && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          removeMakeupStudentFromSession(targetSession?.id || '', makeup.studentId);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                        title="Xóa khỏi danh sách học bù ca này"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    disabled={isLocked}
-                    onClick={() => handleStatusChange(makeup.studentId, 'Present')}
-                    className={`py-1.5 px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1 ${
-                      isLocked
-                        ? 'cursor-default'
-                        : 'active:scale-95 cursor-pointer'
-                    } ${
-                      currentStatus === 'Present'
-                        ? 'bg-[#10B981] text-white shadow-xs'
-                        : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200/80'
-                    }`}
-                    title={
-                      isCoachRestricted
-                        ? 'HLV không có quyền điểm danh/sửa ngày khác hôm nay'
-                        : isFacilityManagerLocked
-                        ? 'Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không thể sửa ngày trước hoặc ngày trong tương lai'
-                        : undefined
-                    }
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>CÓ MẶT</span>
-                  </button>
+                {/* Bottom row (or right side on desktop): 3 Action Buttons */}
+                <div className="flex items-center gap-1.5 w-full sm:w-auto shrink-0">
+                  <div className="grid grid-cols-3 gap-1.5 w-full sm:w-auto flex-1">
+                    <button
+                      type="button"
+                      disabled={isLocked}
+                      onClick={() => handleStatusChange(makeup.studentId, 'Present')}
+                      className={`py-2 sm:py-1.5 px-2 sm:px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1 min-h-[38px] sm:min-h-0 ${
+                        isLocked
+                          ? 'cursor-default'
+                          : 'active:scale-95 cursor-pointer'
+                      } ${
+                        currentStatus === 'Present'
+                          ? 'bg-[#10B981] text-white shadow-xs'
+                          : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
+                      }`}
+                      title={
+                        isCoachRestricted
+                          ? 'HLV không có quyền điểm danh/sửa ngày khác hôm nay'
+                          : isFacilityManagerLocked
+                          ? 'Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không thể sửa ngày trước hoặc ngày trong tương lai'
+                          : undefined
+                      }
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>CÓ MẶT</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    disabled={isLocked || mOutOfLeaves}
-                    onClick={() => handleStatusChange(makeup.studentId, 'Excused')}
-                    className={`py-1.5 px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1 ${
-                      mOutOfLeaves
-                        ? 'bg-slate-100 text-slate-300 cursor-not-allowed border border-dashed border-slate-200 opacity-60'
-                        : isLocked
-                        ? 'cursor-default'
-                        : 'active:scale-95 cursor-pointer'
-                    } ${
-                      currentStatus === 'Excused'
-                        ? 'bg-amber-500 text-white shadow-xs'
-                        : !mOutOfLeaves
-                        ? 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200/80'
-                        : ''
-                    }`}
-                    title={
-                      isCoachRestricted
-                        ? 'HLV không có quyền điểm danh/sửa ngày khác hôm nay'
-                        : isFacilityManagerLocked
-                        ? 'Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không thể sửa ngày trước hoặc ngày trong tương lai'
-                        : mOutOfLeaves
-                        ? 'Học viên đã hết phép tháng, không thể chuyển sang Có phép (chỉ có thể chọn Vắng)'
-                        : 'Nghỉ có phép'
-                    }
-                  >
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span>{mOutOfLeaves ? 'HẾT PHÉP' : 'CÓ PHÉP'}</span>
-                  </button>
+                    <button
+                      type="button"
+                      disabled={isLocked || mOutOfLeaves}
+                      onClick={() => handleStatusChange(makeup.studentId, 'Excused')}
+                      className={`py-2 sm:py-1.5 px-2 sm:px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1 min-h-[38px] sm:min-h-0 ${
+                        mOutOfLeaves
+                          ? 'bg-slate-100 text-slate-300 cursor-not-allowed border border-dashed border-slate-200 opacity-60'
+                          : isLocked
+                          ? 'cursor-default'
+                          : 'active:scale-95 cursor-pointer'
+                      } ${
+                        currentStatus === 'Excused'
+                          ? 'bg-amber-500 text-white shadow-xs'
+                          : !mOutOfLeaves
+                          ? 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
+                          : ''
+                      }`}
+                      title={
+                        isCoachRestricted
+                          ? 'HLV không có quyền điểm danh/sửa ngày khác hôm nay'
+                          : isFacilityManagerLocked
+                          ? 'Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không thể sửa ngày trước hoặc ngày trong tương lai'
+                          : mOutOfLeaves
+                          ? 'Học viên đã hết phép tháng, không thể chuyển sang Có phép (chỉ có thể chọn Vắng)'
+                          : 'Nghỉ có phép'
+                      }
+                    >
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{mOutOfLeaves ? 'HẾT PHÉP' : 'CÓ PHÉP'}</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    disabled={isLocked}
-                    onClick={() => handleStatusChange(makeup.studentId, 'Absent')}
-                    className={`py-1.5 px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1 ${
-                      isLocked
-                        ? 'cursor-default'
-                        : 'active:scale-95 cursor-pointer'
-                    } ${
-                      currentStatus === 'Absent'
-                        ? 'bg-rose-600 text-white shadow-xs'
-                        : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200/80'
-                    }`}
-                    title={
-                      isCoachRestricted
-                        ? 'HLV không có quyền điểm danh/sửa ngày khác hôm nay'
-                        : isFacilityManagerLocked
-                        ? 'Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không thể sửa ngày trước hoặc ngày trong tương lai'
-                        : undefined
-                    }
-                  >
-                    <XCircle className="w-3.5 h-3.5" />
-                    <span>VẮNG</span>
-                  </button>
+                    <button
+                      type="button"
+                      disabled={isLocked}
+                      onClick={() => handleStatusChange(makeup.studentId, 'Absent')}
+                      className={`py-2 sm:py-1.5 px-2 sm:px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1 min-h-[38px] sm:min-h-0 ${
+                        isLocked
+                          ? 'cursor-default'
+                          : 'active:scale-95 cursor-pointer'
+                      } ${
+                        currentStatus === 'Absent'
+                          ? 'bg-rose-600 text-white shadow-xs'
+                          : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
+                      }`}
+                      title={
+                        isCoachRestricted
+                          ? 'HLV không có quyền điểm danh/sửa ngày khác hôm nay'
+                          : isFacilityManagerLocked
+                          ? 'Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không thể sửa ngày trước hoặc ngày trong tương lai'
+                          : undefined
+                      }
+                    >
+                      <XCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>VẮNG</span>
+                    </button>
+                  </div>
+
+                  {/* Desktop delete button */}
+                  {!isLocked && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        removeMakeupStudentFromSession(targetSession?.id || '', makeup.studentId);
+                      }}
+                      className="hidden sm:block p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                      title="Xóa khỏi danh sách học bù ca này"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             );

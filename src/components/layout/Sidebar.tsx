@@ -51,7 +51,7 @@ export const Sidebar: React.FC = () => {
   const menuItems = [
     {
       id: 'dashboard',
-      label: 'Dashboard',
+      label: 'Trang chủ',
       icon: LayoutDashboard,
       roles: ['ADMIN', 'COACH', 'FACILITY_MANAGER'],
       badge: null
@@ -90,9 +90,9 @@ export const Sidebar: React.FC = () => {
     },
     {
       id: 'coaches',
-      label: 'Huấn luyện viên',
+      label: isCoach ? 'Ca dạy của tôi' : 'Huấn luyện viên',
       icon: UserCheck,
-      roles: ['ADMIN'], // Only admin sees coaches directory
+      roles: ['ADMIN', 'COACH'],
       badge: null
     },
     {
@@ -152,14 +152,18 @@ export const Sidebar: React.FC = () => {
 
   return (
     <aside className="hidden lg:flex flex-col w-64 bg-[#0F172A] text-white min-h-screen border-r border-slate-800 shrink-0 sticky top-0 h-screen z-40">
-      {/* Brand Logo Header */}
-      <div className="p-5 flex items-center justify-between border-b border-slate-800">
+      {/* Brand Logo Header - Bấm vào chuyển về Trang chủ */}
+      <div
+        onClick={() => navigate('dashboard')}
+        className="p-5 flex items-center justify-between border-b border-slate-800 cursor-pointer group hover:bg-slate-800/40 transition-colors"
+        title="Bấm để về Trang chủ"
+      >
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 bg-white rounded-2xl flex items-center justify-center p-1 shadow-md shadow-emerald-500/10 shrink-0 overflow-hidden border border-slate-200/20">
+          <div className="w-11 h-11 bg-white rounded-2xl flex items-center justify-center p-1 shadow-md shadow-emerald-500/10 shrink-0 overflow-hidden border border-slate-200/20 group-hover:scale-105 transition-transform">
             <img src="/logo.png" alt="HaNoi Team" className="w-full h-full object-contain" />
           </div>
           <div>
-            <div className="font-extrabold text-lg tracking-tight text-white flex items-center gap-1.5 leading-tight">
+            <div className="font-extrabold text-lg tracking-tight text-white flex items-center gap-1.5 leading-tight group-hover:text-[#A3E635] transition-colors">
               <span>HANOI TEAM</span>
             </div>
             <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">

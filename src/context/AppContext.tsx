@@ -24,6 +24,7 @@ import {
   ChatReaction,
   Coach,
   CoachAttendanceRecord,
+  CoachConflictInfo,
   CourtInfo,
   Facility,
   NotificationItem,
@@ -153,6 +154,7 @@ interface AppContextType {
     },
     suppressToast?: boolean
   ) => void;
+  removeMakeupStudentFromSession: (sessionId: string, studentId: string) => void;
   
   // Payment actions
   confirmPayment: (
@@ -252,12 +254,13 @@ interface AppContextType {
   updateDailyClassNote: (classId: string, note: string) => void;
   removeCoachFromDailyClass: (classId: string, coachId: string) => void;
   assignCoachToDailyClass: (classId: string, coachId: string) => void;
+  checkCoachShiftConflict: (coachId: string, targetClassId: string, targetDateStr?: string) => CoachConflictInfo | null;
   getDailyClasses: (dateStr: string, filterFacilityId?: string) => BadmintonClass[];
   getClassById: (classId: string, dateStr?: string) => BadmintonClass | undefined;
   
   // Quick attendance target
-  attendanceTarget: { classId: string; date: string; sessionId?: string; facilityId?: string } | null;
-  setAttendanceTarget: (target: { classId: string; date: string; sessionId?: string; facilityId?: string } | null) => void;
+  attendanceTarget: { classId?: string; date: string; sessionId?: string; facilityId?: string; shiftId?: string } | null;
+  setAttendanceTarget: (target: { classId?: string; date: string; sessionId?: string; facilityId?: string; shiftId?: string } | null) => void;
 
   // Center Holidays (Ngày nghỉ lễ)
   holidays: CenterHoliday[];
@@ -308,9 +311,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : ['2026-08-04', '2026-08-08', '2026-08-11', '2026-08-15', '2026-08-18', '2026-08-22', '2026-08-28'])
         : ['2026-08-03', '2026-08-05', '2026-08-07', '2026-08-10', '2026-08-12', '2026-08-14', '2026-08-17', '2026-08-19', '2026-08-21', '2026-08-24', '2026-08-26', '2026-08-28'];
 
-      // Allocate students across the 5 facilities and 3 shifts
-      const targetFac = facMap[idx % facMap.length];
-      const targetShift = shiftMap[idx % shiftMap.length];
+      // Match student to their actual class in INITIAL_CLASSES
+      const matchedClass = INITIAL_CLASSES.find(c => c.id === s.classId);
+      let targetFac = facMap.find(f => f.id === matchedClass?.facilityId) || facMap[0];
+      let targetShift = shiftMap.find(sh => sh.id === matchedClass?.shiftId) || shiftMap[1]; // default Ca 1
+
+      // Student HV012 requested Ca sáng at Triều Khúc
+      if (s.id === 'HV012') {
+        targetFac = facMap[0]; // Triều Khúc
+        targetShift = shiftMap[0]; // Ca sáng
+      }
 
       // Demo multi-facility student for HV003 (idx === 2)
       const isMultiFacilityDemo = idx === 2;
@@ -403,7 +413,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const [attendanceTarget, setAttendanceTarget] = useState<{ classId: string; date: string; sessionId?: string; facilityId?: string } | null>(null);
+  const [attendanceTarget, setAttendanceTarget] = useState<{ classId?: string; date: string; sessionId?: string; facilityId?: string; shiftId?: string } | null>(null);
 
   const showToast = (message: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
     const id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
@@ -426,6 +436,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const switchUser = (userId: string) => {
     const target = INITIAL_USERS.find(u => u.id === userId);
     if (target) {
+      setAttendanceTarget(null); // Dọn sạch target điểm danh cũ khi đổi user
       setCurrentUser(target);
       const roleLabel =
         target.role === 'ADMIN'
@@ -449,6 +460,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const switchRole = (role: UserRole, coachId?: string) => {
+    setAttendanceTarget(null); // Dọn sạch target điểm danh cũ khi đổi role
     if (role === 'ADMIN') {
       setCurrentUser(INITIAL_USERS[0]);
       showToast('Đã chuyển sang vai trò: Ban Quản Trị (ADMIN)', 'info');
@@ -488,21 +500,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return students;
   }, [students, isCoach, isFacilityManager, currentUser, managedFacilityId]);
 
-  const assignedSessions = useMemo(() => {
-    if (isCoach) {
-      const coachId = currentUser.coachId || currentUser.id;
-      return sessions.filter(
-        s =>
-          s.coachId === coachId ||
-          s.coachName === currentUser.name ||
-          (s.coaches && s.coaches.some(c => c.id === coachId || c.name === currentUser.name))
-      );
-    }
-    if (isFacilityManager && managedFacilityId) {
-      return sessions.filter(s => s.facilityId === managedFacilityId || (!s.facilityId && managedFacilityId === 'CS01'));
-    }
-    return sessions;
-  }, [sessions, isCoach, isFacilityManager, currentUser, managedFacilityId]);
 
   const assignedCourts = useMemo(() => {
     if (isFacilityManager && managedFacilityId) {
@@ -514,25 +511,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Daily coach assignments: { [classId]: string[] (array of coachIds) }
   const [dailyCoachAssignments, setDailyCoachAssignments] = useState<Record<string, string[]>>(() => {
     try {
-      const saved = localStorage.getItem('badminton_daily_coach_assignments_v3');
+      const saved = localStorage.getItem('badminton_daily_coach_assignments_v5');
       if (saved) {
-        const parsed = JSON.parse(saved);
-        if (!parsed['CLS_CS02_CA01_2026-08-28'] || parsed['CLS_CS02_CA01_2026-08-28'].length === 0) {
-          parsed['CLS_CS02_CA01_2026-08-28'] = ['HLV001', 'HLV002', 'HLV003', 'HLV004', 'HLV005'];
-          localStorage.setItem('badminton_daily_coach_assignments_v3', JSON.stringify(parsed));
-        }
-        return parsed;
+        return JSON.parse(saved);
       }
-      return {
-        'CLS_CS02_CA01_2026-08-28': ['HLV001', 'HLV002', 'HLV003', 'HLV004', 'HLV005'],
-        'CLS_CS01_CA04_2026-08-28': ['HLV001'],
-        'CLS_CS01_CA02_2026-08-28': ['HLV002'],
-        'CLS_CS02_CA04_2026-08-28': ['HLV004', 'HLV003'],
-        'CLS_CS03_CA03_2026-08-28': ['HLV005']
+      const initialSeed: Record<string, string[]> = {
+        // Đồng bộ chuẩn theo Quản Lý Ca Học & Lịch Ca:
+        // Ca sáng (CA01): Chỉ có Triều Khúc (CS01)
+        'CLS_CS01_CA01_2026-08-28': ['HLV001'],
+        // Ca 1 (CA02): Triều Khúc, Cầu Giấy, Phú Đô
+        'CLS_CS01_CA02_2026-08-28': ['HLV001'],
+        'CLS_CS02_CA02_2026-08-28': ['HLV002'],
+        'CLS_CS04_CA02_2026-08-28': ['HLV004'],
+        // Ca 2 (CA03): Mỹ Đình, Trung tâm đào tạo
+        'CLS_CS03_CA03_2026-08-28': ['HLV003'],
+        'CLS_CS05_CA03_2026-08-28': ['HLV005']
       };
+      localStorage.setItem('badminton_daily_coach_assignments_v5', JSON.stringify(initialSeed));
+      return initialSeed;
     } catch {
       return {
-        'CLS_CS02_CA01_2026-08-28': ['HLV001', 'HLV002', 'HLV003', 'HLV004', 'HLV005']
+        'CLS_CS01_CA01_2026-08-28': ['HLV001'],
+        'CLS_CS01_CA02_2026-08-28': ['HLV001'],
+        'CLS_CS02_CA02_2026-08-28': ['HLV002']
       };
     }
   });
@@ -551,12 +552,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Daily class pre-session reminder notes: { [classId]: string }
   const [dailyClassNotes, setDailyClassNotes] = useState<Record<string, string>>(() => {
     try {
-      const saved = localStorage.getItem('badminton_daily_class_notes_v1');
+      const saved = localStorage.getItem('badminton_daily_class_notes_v2');
       if (saved) return JSON.parse(saved);
       return {
-        'CLS_CS02_CA01_2026-08-28': 'Lớp đông 16 học viên chia 5 HLV kèm cặp. Khởi động kỹ và tập các bài ép sân cơ bản.',
-        'CLS_CS01_CA04_2026-08-28': 'Khởi động kỹ cổ chân và rèn kỹ thuật đập cầu góc chéo sân.',
-        'CLS_CS01_CA02_2026-08-28': 'Lớp có 2 học viên mới, HLV hướng dẫn tư thế cầm vợt chuẩn BWF.'
+        'CLS_CS01_CA01_2026-08-28': 'Khởi động kỹ cổ chân và rèn kỹ thuật đập cầu góc chéo sân.',
+        'CLS_CS01_CA02_2026-08-28': 'Lớp có học viên mới, HLV hướng dẫn tư thế cầm vợt chuẩn BWF.',
+        'CLS_CS02_CA02_2026-08-28': 'Lớp đông học viên, khởi động kỹ và tập các bài ép sân cơ bản.'
       };
     } catch {
       return {};
@@ -566,24 +567,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Class coach-student assignments: { [classId]: { [coachId]: string[] } }
   const [classCoachStudentAssignments, setClassCoachStudentAssignments] = useState<Record<string, Record<string, string[]>>>(() => {
     const defaultRichAssignments: Record<string, Record<string, string[]>> = {
-      'CLS_CS02_CA01_2026-08-28': {
-        'HLV001': ['HV001', 'HV002', 'HV003'],
-        'HLV002': ['HV004', 'HV005'],
-        'HLV003': ['HV006', 'HV007', 'HV008'],
-        'HLV004': ['HV009', 'HV010'],
-        'HLV005': ['HV011']
+      'CLS_CS01_CA02_2026-08-28': {
+        'HLV001': ['HV001', 'HV002', 'HV003', 'HV004', 'HV005']
+      },
+      'CLS_CS02_CA02_2026-08-28': {
+        'HLV002': ['HV013', 'HV014', 'HV015', 'HV016', 'HV017']
       }
     };
 
     try {
-      const saved = localStorage.getItem('badminton_class_coach_student_assignments_v1');
+      const saved = localStorage.getItem('badminton_class_coach_student_assignments_v2');
       if (saved) {
         const parsed = JSON.parse(saved);
-        const existingClass = parsed['CLS_CS02_CA01_2026-08-28'];
+        const existingClass = parsed['CLS_CS01_CA02_2026-08-28'];
         const count = existingClass ? Object.values(existingClass).flat().length : 0;
         if (count <= 1) {
-          parsed['CLS_CS02_CA01_2026-08-28'] = defaultRichAssignments['CLS_CS02_CA01_2026-08-28'];
-          localStorage.setItem('badminton_class_coach_student_assignments_v1', JSON.stringify(parsed));
+          parsed['CLS_CS01_CA02_2026-08-28'] = defaultRichAssignments['CLS_CS01_CA02_2026-08-28'];
+          parsed['CLS_CS02_CA02_2026-08-28'] = defaultRichAssignments['CLS_CS02_CA02_2026-08-28'];
+          localStorage.setItem('badminton_class_coach_student_assignments_v2', JSON.stringify(parsed));
         }
         return parsed;
       }
@@ -664,10 +665,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let timeSlot = '';
     let targetCoachIds: string[] = [];
 
+    let sessionDate = '2026-08-28';
     if (classId.startsWith('CLS_')) {
       const parts = classId.split('_');
       const facId = parts[1];
       const shiftId = parts[2];
+      sessionDate = parts.slice(3).join('_') || '2026-08-28';
       const facObj = facilities.find(f => f.id === facId);
       if (facObj) facilityName = facObj.name;
       const shiftObj = shifts.find(s => s.id === shiftId);
@@ -716,6 +719,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         shiftName,
         timeSlot,
         noteContent: noteText.trim(),
+        sessionDate,
         senderName: senderTitle,
         linkTo: { tab: 'attendance', id: classId }
       }));
@@ -758,6 +762,122 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Đã lưu và gửi thông báo dặn dò đến Huấn luyện viên thành công!', 'success');
   }, [currentUser, dispatchCoachReminderNotification]);
 
+  // Helper: kiểm tra hai khoảng thời gian có bị trùng nhau không
+  const isTimeOverlap = (startA?: string, endA?: string, startB?: string, endB?: string) => {
+    if (!startA || !endA || !startB || !endB) return false;
+    const toMinutes = (timeStr: string) => {
+      const parts = timeStr.trim().split(':');
+      if (parts.length < 2) return null;
+      const h = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      if (isNaN(h) || isNaN(m)) return null;
+      return h * 60 + m;
+    };
+    const sA = toMinutes(startA);
+    const eA = toMinutes(endA);
+    const sB = toMinutes(startB);
+    const eB = toMinutes(endB);
+    if (sA === null || eA === null || sB === null || eB === null) return false;
+    return sA < eB && sB < eA;
+  };
+
+  // Kiểm tra xung đột lịch dạy của HLV giữa các cơ sở trong cùng ca học / ngày
+  const checkCoachShiftConflict = useCallback((
+    coachId: string,
+    targetClassId: string,
+    targetDateStr?: string
+  ): CoachConflictInfo | null => {
+    if (!coachId || !targetClassId) return null;
+
+    let targetFacId = '';
+    let targetShiftId = '';
+    let targetDate = targetDateStr || '';
+
+    if (targetClassId.startsWith('CLS_')) {
+      const parts = targetClassId.split('_');
+      targetFacId = parts[1] || '';
+      targetShiftId = parts[2] || '';
+      targetDate = parts.slice(3).join('_') || targetDate || '2026-08-28';
+    } else {
+      const staticClass = classes.find(c => c.id === targetClassId);
+      if (staticClass) {
+        targetFacId = staticClass.facilityId || '';
+        targetShiftId = staticClass.shiftId || '';
+      }
+      targetDate = targetDate || '2026-08-28';
+    }
+
+    if (!targetShiftId || !targetDate) return null;
+
+    const targetShift = shifts.find(s => s.id === targetShiftId);
+
+    const isShiftConflicting = (otherShiftId?: string, otherStart?: string, otherEnd?: string) => {
+      if (!otherShiftId && !otherStart) return false;
+      if (otherShiftId && otherShiftId === targetShiftId) return true;
+      const sh = otherShiftId ? shifts.find(s => s.id === otherShiftId) : undefined;
+      const s1 = targetShift?.startTime;
+      const e1 = targetShift?.endTime;
+      const s2 = otherStart || sh?.startTime;
+      const e2 = otherEnd || sh?.endTime;
+      return isTimeOverlap(s1, e1, s2, e2);
+    };
+
+    // 1. Kiểm tra trong danh sách phân công hàng ngày (dailyCoachAssignments)
+    for (const [classKey, coachIds] of Object.entries(dailyCoachAssignments)) {
+      if (!Array.isArray(coachIds) || !coachIds.includes(coachId)) continue;
+      if (classKey === targetClassId) continue;
+
+      if (classKey.startsWith('CLS_')) {
+        const parts = classKey.split('_');
+        const fId = parts[1];
+        const sId = parts[2];
+        const dStr = parts.slice(3).join('_');
+
+        if (dStr !== targetDate) continue;
+        if (fId === targetFacId) continue; // Cùng cơ sở không coi là xung đột chéo cơ sở
+
+        if (isShiftConflicting(sId)) {
+          const fac = facilities.find(f => f.id === fId);
+          const sh = shifts.find(s => s.id === sId);
+          return {
+            conflictFacilityId: fId,
+            conflictFacilityName: fac?.name || fId,
+            conflictShiftId: sId,
+            conflictShiftName: sh?.name || sId,
+            date: targetDate
+          };
+        }
+      }
+    }
+
+    // 2. Kiểm tra trong các ca học/buổi học đã lên lịch (sessions)
+    for (const s of sessions) {
+      if (s.date !== targetDate) continue;
+      if (!s.facilityId || s.facilityId === targetFacId) continue;
+
+      const hasCoach =
+        s.coachId === coachId ||
+        (s.coachIds && s.coachIds.includes(coachId)) ||
+        (s.coaches && s.coaches.some(c => c.id === coachId));
+
+      if (!hasCoach) continue;
+
+      if (isShiftConflicting(s.shiftId, s.startTime, s.endTime)) {
+        const fac = facilities.find(f => f.id === s.facilityId);
+        const sh = shifts.find(sh => sh.id === s.shiftId);
+        return {
+          conflictFacilityId: s.facilityId,
+          conflictFacilityName: fac?.name || s.facilityName || s.facilityId,
+          conflictShiftId: s.shiftId || targetShiftId,
+          conflictShiftName: sh?.name || s.shiftName || 'Ca học',
+          date: targetDate
+        };
+      }
+    }
+
+    return null;
+  }, [shifts, dailyCoachAssignments, sessions, facilities, classes]);
+
   const addCoachToDailyClass = useCallback((classId: string, coachIdOrIds: string | string[], note?: string) => {
     if (currentUser.role === 'COACH') {
       showToast('Chỉ Admin hoặc Quản lý sân mới có quyền thêm HLV vào lớp!', 'error');
@@ -794,27 +914,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
+    // Kiểm tra xung đột ca chéo cơ sở
+    const validIds: string[] = [];
+    const conflictedList: { coachName: string; conflict: CoachConflictInfo }[] = [];
+
+    idsToAdd.forEach(id => {
+      const conflict = checkCoachShiftConflict(id, classId);
+      if (conflict) {
+        const c = coaches.find(item => item.id === id);
+        conflictedList.push({ coachName: c?.name || id, conflict });
+      } else {
+        validIds.push(id);
+      }
+    });
+
+    if (conflictedList.length > 0) {
+      const first = conflictedList[0];
+      showToast(
+        `Không thể thêm HLV ${first.coachName}: Đang dạy ca ${first.conflict.conflictShiftName} tại ${first.conflict.conflictFacilityName}!`,
+        'error'
+      );
+    }
+
+    if (!validIds.length) {
+      return;
+    }
+
     setDailyCoachAssignments(prev => {
       const currentList = prev[classId] || [];
-      const newIds = idsToAdd.filter(id => !currentList.includes(id));
+      const newIds = validIds.filter(id => !currentList.includes(id));
       if (!newIds.length) return prev;
       const nextList = [...currentList, ...newIds];
       const next = { ...prev, [classId]: nextList };
       try {
-        localStorage.setItem('badminton_daily_coach_assignments_v3', JSON.stringify(next));
+        localStorage.setItem('badminton_daily_coach_assignments_v4', JSON.stringify(next));
       } catch (e) {
         console.error(e);
       }
       return next;
     });
 
-    if (idsToAdd.length === 1) {
-      const coach = coaches.find(c => c.id === idsToAdd[0]);
-      showToast(`Đã thêm HLV ${coach?.name || idsToAdd[0]} vào ca học!`, 'success');
+    if (validIds.length === 1) {
+      const coach = coaches.find(c => c.id === validIds[0]);
+      showToast(`Đã thêm HLV ${coach?.name || validIds[0]} vào ca học!`, 'success');
     } else {
-      showToast(`Đã thêm ${idsToAdd.length} Huấn luyện viên vào ca học!`, 'success');
+      showToast(`Đã thêm ${validIds.length} Huấn luyện viên vào ca học!`, 'success');
     }
-  }, [currentUser, coaches]);
+  }, [currentUser, coaches, checkCoachShiftConflict, dispatchCoachReminderNotification]);
 
   const removeCoachFromDailyClass = useCallback((classId: string, coachId: string) => {
     if (currentUser.role === 'COACH') {
@@ -832,7 +978,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const nextList = currentList.filter(id => id !== coachId);
       const next = { ...prev, [classId]: nextList };
       try {
-        localStorage.setItem('badminton_daily_coach_assignments_v3', JSON.stringify(next));
+        localStorage.setItem('badminton_daily_coach_assignments_v4', JSON.stringify(next));
       } catch (e) {
         console.error(e);
       }
@@ -848,10 +994,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast('Chỉ Admin hoặc Quản lý sân mới có quyền phân công HLV!', 'error');
       return;
     }
+    if (coachId) {
+      const conflict = checkCoachShiftConflict(coachId, classId);
+      if (conflict) {
+        const coach = coaches.find(c => c.id === coachId);
+        showToast(
+          `Không thể phân công: HLV ${coach?.name || coachId} đang dạy ca ${conflict.conflictShiftName} tại ${conflict.conflictFacilityName}!`,
+          'error'
+        );
+        return;
+      }
+    }
     setDailyCoachAssignments(prev => {
       const next = { ...prev, [classId]: coachId ? [coachId] : [] };
       try {
-        localStorage.setItem('badminton_daily_coach_assignments_v3', JSON.stringify(next));
+        localStorage.setItem('badminton_daily_coach_assignments_v4', JSON.stringify(next));
       } catch (e) {
         console.error(e);
       }
@@ -859,7 +1016,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     const coach = coaches.find(c => c.id === coachId);
     showToast(`Đã phân công HLV ${coach?.name || coachId} phụ trách lớp!`, 'success');
-  }, [currentUser, coaches]);
+  }, [currentUser, coaches, checkCoachShiftConflict]);
 
   const addStudentsToDailyClass = useCallback((classId: string, studentIdOrIds: string | string[]) => {
     if (currentUser.role === 'COACH') {
@@ -1051,6 +1208,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       facilityName: string;
       note?: string;
     }): { success: boolean; affectedCount: number } => {
+      if (currentUser.role !== 'ADMIN') {
+        showToast('Chỉ Ban Quản Trị (ADMIN) mới có quyền khai báo ngày nghỉ lễ!', 'error');
+        return { success: false, affectedCount: 0 };
+      }
+
       const sDate = input.startDate || input.date || '';
       const eDate = input.endDate || sDate;
       const holidayDates = getDatesInRange(sDate, eDate);
@@ -1129,10 +1291,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const removeHoliday = useCallback((holidayId: string) => {
+    if (currentUser.role !== 'ADMIN') {
+      showToast('Chỉ Ban Quản Trị (ADMIN) mới có quyền hủy ngày nghỉ lễ!', 'error');
+      return;
+    }
     const hol = holidays.find(h => h.id === holidayId);
     setHolidays(prev => prev.filter(h => h.id !== holidayId));
     showToast(`Đã hủy ngày nghỉ lễ ${hol ? hol.name : ''}.`, 'info');
-  }, [holidays]);
+  }, [currentUser, holidays, showToast]);
 
   // Generates classes dynamically for a specific day based on Facilities (Sân) × Shifts (Ca)
   // and auto-enrolls students who registered for that facility, shift, and date.
@@ -1205,17 +1371,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return;
         }
 
-        // Determine assigned coaches: strictly based on dailyCoachAssignments set by Admin / Facility Manager, or fallback to class/coach assignments
-        let effectiveCoachIds = dailyCoachAssignments[classId] || [];
-        if (effectiveCoachIds.length === 0) {
+        // Determine assigned coaches: strictly based on dailyCoachAssignments set by Admin / Facility Manager, or fallback to class/coach assignments if no conflict
+        let effectiveCoachIds: string[] = [];
+        if (classId in dailyCoachAssignments) {
+          effectiveCoachIds = dailyCoachAssignments[classId] || [];
+        } else {
           const matchingClass = classes.find(c => c.facilityId === facility.id && c.shiftId === shift.id);
-          if (matchingClass?.coachId) {
-            effectiveCoachIds = [matchingClass.coachId];
-          } else {
-            const matchingCoach = coaches.find(c => c.assignedFacilityId === facility.id && c.assignedShiftId === shift.id);
-            if (matchingCoach) {
-              effectiveCoachIds = [matchingCoach.id];
-            }
+          const candidateCoachId = matchingClass?.coachId || coaches.find(c => c.assignedFacilityId === facility.id && c.assignedShiftId === shift.id)?.id;
+          if (candidateCoachId && !checkCoachShiftConflict(candidateCoachId, classId)) {
+            effectiveCoachIds = [candidateCoachId];
           }
         }
 
@@ -1346,12 +1510,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           allStudents.push(...facilityStudents.slice(0, 6));
         }
 
-        const assignedCoachIds = dailyCoachAssignments[classId] || [];
-        let assignedCoaches = assignedCoachIds
-          .map(cid => coaches.find(c => c.id === cid))
-          .filter((c): c is Coach => Boolean(c));
+        let assignedCoachIds: string[] = [];
+        let assignedCoaches: Coach[] = [];
 
-        if (assignedCoaches.length === 0) {
+        if (classId in dailyCoachAssignments) {
+          assignedCoachIds = dailyCoachAssignments[classId] || [];
+          assignedCoaches = assignedCoachIds
+            .map(cid => coaches.find(c => c.id === cid))
+            .filter((c): c is Coach => Boolean(c));
+        } else {
           const matchedSession = sessions.find(s =>
             s.date === date &&
             (s.facilityId === facility.id || (s.facilityName && s.facilityName.toLowerCase().includes(facility.name.toLowerCase()))) &&
@@ -1365,10 +1532,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               if (cList.length > 0) assignedCoaches = cList;
             }
           }
-        }
-        if (assignedCoaches.length === 0) {
-          const facCoaches = coaches.filter(c => c.assignedFacilityId === facility.id);
-          assignedCoaches = facCoaches.length > 0 ? facCoaches.slice(0, 2) : coaches.slice(0, 2);
+          if (assignedCoaches.length === 0) {
+            const facCoaches = coaches.filter(c => c.assignedFacilityId === facility.id);
+            assignedCoaches = facCoaches.length > 0 ? facCoaches.slice(0, 2) : coaches.slice(0, 2);
+          }
+          assignedCoachIds = assignedCoaches.map(c => c.id);
         }
         const primaryCoach = assignedCoaches[0];
 
@@ -1414,6 +1582,174 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       note: dailyClassNotes[classId] || fallback.note || ''
     } : fallback;
   }, [classes, facilities, shifts, students, coaches, dailyCoachAssignments, dailyStudentAssignments, dailyClassNotes, sessionUnitPrice]);
+
+  // Đồng bộ và làm giàu danh sách ca học với dailyCoachAssignments và các ca động hàng ngày
+  const allEffectiveSessions = useMemo<SessionSchedule[]>(() => {
+    const sessionMap = new Map<string, SessionSchedule>();
+
+    // A. Bắt đầu với sessions từ state, cập nhật lại HLV nếu ca học đã có trong dailyCoachAssignments
+    sessions.forEach(s => {
+      const facId = s.facilityId || 'CS01';
+      const shiftId = s.shiftId || 'CA01';
+      const dateStr = s.date;
+      const dynamicClassId = s.classId?.startsWith('CLS_')
+        ? s.classId
+        : `CLS_${facId}_${shiftId}_${dateStr}`;
+      const sessionKey = `${dateStr}_${facId}_${shiftId}`;
+
+      let updatedSession: SessionSchedule = { ...s };
+
+      if (dynamicClassId in dailyCoachAssignments) {
+        const assignedIds = dailyCoachAssignments[dynamicClassId] || [];
+        const assignedCoachesList = assignedIds
+          .map(cid => coaches.find(c => c.id === cid))
+          .filter((c): c is Coach => Boolean(c));
+        const primaryCoach = assignedCoachesList[0];
+
+        updatedSession = {
+          ...updatedSession,
+          coachIds: assignedIds,
+          coaches: assignedCoachesList,
+          coachId: assignedIds.join(','),
+          coachName: assignedCoachesList.length > 0
+            ? assignedCoachesList.map(c => c.name).join(', ')
+            : 'Chưa có HLV',
+          coachAvatar: primaryCoach?.avatar
+        };
+      }
+
+      sessionMap.set(sessionKey, updatedSession);
+    });
+
+    // B. Bổ sung các ca động từ dailyCoachAssignments chưa có trong sessions
+    Object.entries(dailyCoachAssignments).forEach(([classKey, coachIds]) => {
+      if (!classKey.startsWith('CLS_')) return;
+      const parts = classKey.split('_');
+      const facId = parts[1];
+      const shiftId = parts[2];
+      const dateStr = parts.slice(3).join('_');
+      if (!facId || !shiftId || !dateStr) return;
+
+      const sessionKey = `${dateStr}_${facId}_${shiftId}`;
+      const existing = sessionMap.get(sessionKey);
+
+      const targetFacility = facilities.find(f => f.id === facId) || facilities[0];
+      const targetShift = shifts.find(s => s.id === shiftId) || shifts[0];
+      const assignedCoachesList = (coachIds || [])
+        .map(cid => coaches.find(c => c.id === cid))
+        .filter((c): c is Coach => Boolean(c));
+      const primaryCoach = assignedCoachesList[0];
+
+      if (existing) {
+        sessionMap.set(sessionKey, {
+          ...existing,
+          classId: classKey,
+          coachIds: coachIds || [],
+          coaches: assignedCoachesList,
+          coachId: (coachIds || []).join(','),
+          coachName: assignedCoachesList.length > 0
+            ? assignedCoachesList.map(c => c.name).join(', ')
+            : 'Chưa có HLV',
+          coachAvatar: primaryCoach?.avatar
+        });
+      } else {
+        const dayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+        const dayOfWeek = dayNames[new Date(dateStr).getDay()] || 'Thứ Sáu';
+        const isPast = dateStr < '2026-08-28';
+
+        const enrolledCount = students.filter(student => {
+          if (student.scheduledSessions && student.scheduledSessions.length > 0) {
+            return student.scheduledSessions.some(
+              ss => ss.date === dateStr && ss.facilityId === facId && ss.shiftId === shiftId
+            );
+          }
+          if (student.specificDates && student.specificDates.length > 0) {
+            if (student.specificDates.includes(dateStr)) {
+              return (student.fixedShiftId || student.shiftId) === shiftId && student.facilityId === facId;
+            }
+          }
+          return student.facilityId === facId && (student.fixedShiftId || student.shiftId) === shiftId;
+        }).length;
+
+        const newSession: SessionSchedule = {
+          id: `SES-${classKey}`,
+          classId: classKey,
+          className: `${targetShift.name} • ${targetFacility.name}`,
+          level: 'Beginner',
+          facilityId: targetFacility.id,
+          facilityName: targetFacility.name,
+          court: targetFacility.name,
+          shiftId: targetShift.id,
+          shiftName: targetShift.name,
+          coachId: (coachIds || []).join(','),
+          coachName: assignedCoachesList.length > 0
+            ? assignedCoachesList.map(c => c.name).join(', ')
+            : 'Chưa có HLV',
+          coachAvatar: primaryCoach?.avatar,
+          coaches: assignedCoachesList,
+          coachIds: coachIds || [],
+          date: dateStr,
+          dayOfWeek,
+          startTime: targetShift.startTime,
+          endTime: targetShift.endTime,
+          timeSlot: `${targetShift.startTime} - ${targetShift.endTime}`,
+          status: isPast ? 'Completed' : 'Upcoming',
+          attendanceDone: isPast,
+          coachAttendanceDone: isPast,
+          totalStudents: enrolledCount > 0 ? enrolledCount : (targetFacility.totalCourts || 2) * 4,
+          attendanceRecords: [],
+          makeupStudents: [],
+          note: dailyClassNotes[classKey] || ''
+        };
+
+        sessionMap.set(sessionKey, newSession);
+      }
+    });
+
+    return Array.from(sessionMap.values());
+  }, [sessions, dailyCoachAssignments, coaches, facilities, shifts, students, dailyClassNotes]);
+
+  // Phân quyền danh sách ca học:
+  // - HLV: Chỉ hiển thị những lớp đã được phân công đi dạy (trong dailyCoachAssignments hoặc đã được phân công)
+  // - Quản lý sân: Chỉ hiển thị những lớp tại cơ sở do mình quản lý
+  // - Admin: Hiển thị toàn bộ lịch của toàn hệ thống
+  const assignedSessions = useMemo<SessionSchedule[]>(() => {
+    if (isCoach) {
+      const coachId = currentUser.coachId || currentUser.id;
+      return allEffectiveSessions.filter(s => {
+        const facId = s.facilityId || 'CS01';
+        const shiftId = s.shiftId || 'CA01';
+        const dateStr = s.date;
+        const dynamicClassId = s.classId?.startsWith('CLS_')
+          ? s.classId
+          : `CLS_${facId}_${shiftId}_${dateStr}`;
+
+        // 1. Nếu ca học đã được Admin / Quản lý phân công qua dailyCoachAssignments
+        if (dynamicClassId in dailyCoachAssignments) {
+          const assignedIds = dailyCoachAssignments[dynamicClassId] || [];
+          return assignedIds.includes(coachId);
+        }
+
+        // 2. Không hiển thị ca chưa có HLV
+        if (!s.coachId || s.coachName === 'Chưa có HLV') return false;
+
+        // 3. Với các ca mock/khác: kiểm tra coachId hoặc coaches list
+        return (
+          (s.coachIds && s.coachIds.includes(coachId)) ||
+          (s.coaches && s.coaches.some(c => c.id === coachId || c.name === currentUser.name)) ||
+          s.coachId === coachId ||
+          s.coachName === currentUser.name
+        );
+      });
+    }
+    if (isFacilityManager && managedFacilityId) {
+      return allEffectiveSessions.filter(
+        s => s.facilityId === managedFacilityId || (!s.facilityId && managedFacilityId === 'CS01')
+      );
+    }
+    return allEffectiveSessions;
+  }, [allEffectiveSessions, isCoach, isFacilityManager, currentUser, managedFacilityId, dailyCoachAssignments]);
+
 
   // Facility CRUD (Admin Only)
   const addFacility = (facilityData: Omit<Facility, 'id' | 'code'>) => {
@@ -1538,6 +1874,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteSession = (id: string) => {
     setSessions(prev => prev.filter(s => s.id !== id));
+    if (id.startsWith('SES-CLS_')) {
+      const classId = id.replace('SES-', '');
+      if (classId in dailyCoachAssignments) {
+        setDailyCoachAssignments(prev => {
+          const next = { ...prev };
+          delete next[classId];
+          try {
+            localStorage.setItem('badminton_daily_coach_assignments_v4', JSON.stringify(next));
+          } catch (e) {
+            console.error(e);
+          }
+          return next;
+        });
+      }
+    }
     showToast('Đã xoá ca học khỏi lịch!', 'info');
   };
 
@@ -1553,7 +1904,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const currentCoach = coaches.find(c => c.id === coachId || c.code === coachId);
 
     const finalFacilityId = params.facilityId || facilities[0]?.id || 'CS01';
-    const finalShiftId = params.shiftId || shifts[0]?.id || 'CA04';
+    const finalShiftId = params.shiftId || shifts[0]?.id || 'CA01';
 
     const targetShift = shifts.find(s => s.id === finalShiftId) || shifts[0];
     const targetFacility = facilities.find(f => f.id === finalFacilityId) || facilities[0];
@@ -1841,7 +2192,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setSessions(prev => {
-      const existing = prev.find(s => s.id === sessionId);
+      const existing = prev.find(
+        s =>
+          s.id === sessionId ||
+          (sessionMeta &&
+            s.date === sessionMeta.date &&
+            s.facilityId === sessionMeta.facilityId &&
+            s.shiftId === sessionMeta.shiftId)
+      );
       if (!existing) {
         const newSession: SessionSchedule = {
           id: sessionId,
@@ -1850,11 +2208,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           level: 'Beginner',
           facilityId: sessionMeta?.facilityId || 'CS01',
           facilityName: sessionMeta?.facilityName || 'Sân Cầu Lông Cầu Giấy',
+          shiftId: sessionMeta?.shiftId || 'CA01',
           date: sessionMeta?.date || new Date().toISOString().split('T')[0],
           dayOfWeek: 'Hôm nay',
-          startTime: '17:30',
-          endTime: '19:00',
-          timeSlot: sessionMeta?.timeSlot || '17:30 - 19:00',
+          startTime: sessionMeta?.timeSlot?.split(' - ')[0] || '18:00',
+          endTime: sessionMeta?.timeSlot?.split(' - ')[1] || '19:30',
+          timeSlot: sessionMeta?.timeSlot || '18:00 - 19:30',
           court: 'Sân 01',
           coachId: 'HLV001',
           coachName: 'Huấn luyện viên',
@@ -1867,12 +2226,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return [newSession, ...prev];
       }
       return prev.map(s => {
-        if (s.id === sessionId) {
+        if (
+          s.id === existing.id ||
+          s.id === sessionId ||
+          (sessionMeta &&
+            s.date === sessionMeta.date &&
+            s.facilityId === sessionMeta.facilityId &&
+            s.shiftId === sessionMeta.shiftId)
+        ) {
           const currentMakeup = s.makeupStudents || [];
-          const exists = currentMakeup.some(m => m.studentId === student.id);
+          const exists = currentMakeup.some(m => (m.studentId || (m as any).id) === student.id);
           if (exists) return s;
           return {
             ...s,
+            shiftId: s.shiftId || sessionMeta?.shiftId || 'CA01',
             makeupStudents: [...currentMakeup, makeupItem],
             totalStudents: s.totalStudents + 1
           };
@@ -1881,61 +2248,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     });
 
-    // Đồng bộ sang thông tin lịch học của học viên (scheduledSessions) để tự động cập nhật ở màn Đổi Lịch Học / Đổi Sân & Ca Buổi Tập
-    if (sessionMeta) {
-      setStudents(prevStudents =>
-        prevStudents.map(st => {
-          if (st.id !== student.id) return st;
-
-          const currentSessions = st.scheduledSessions ? [...st.scheduledSessions] : [];
-          const existingIdx = currentSessions.findIndex(s => s.date === sessionMeta.date);
-
-          const cleanFacName = sessionMeta.facilityName
-            ? sessionMeta.facilityName.replace('Sân Cầu Lông ', '')
-            : 'Cầu Giấy';
-
-          const updatedSession: ScheduledSession = {
-            date: sessionMeta.date,
-            facilityId: sessionMeta.facilityId,
-            facilityName: cleanFacName,
-            shiftId: sessionMeta.shiftId || 'CA01',
-            shiftName: sessionMeta.shiftName || 'Ca Sáng 1',
-            timeSlot: sessionMeta.timeSlot || '06:00 - 07:30'
-          };
-
-          if (existingIdx >= 0) {
-            currentSessions[existingIdx] = updatedSession;
-          } else {
-            currentSessions.push(updatedSession);
-          }
-
-          currentSessions.sort((a, b) => a.date.localeCompare(b.date));
-
-          // Cập nhật lại facilityName nếu có nhiều sân
-          const uniqueFacs = Array.from(new Set(currentSessions.map(s => s.facilityName)));
-          let updatedFacilityName = st.facilityName;
-          if (uniqueFacs.length > 1) {
-            updatedFacilityName = `Đa cơ sở (${uniqueFacs.length} cơ sở)`;
-          } else if (uniqueFacs.length === 1) {
-            updatedFacilityName = uniqueFacs[0];
-          }
-
-          const updatedDates = currentSessions.map(s => s.date);
-
-          return {
-            ...st,
-            scheduledSessions: currentSessions,
-            specificDates: updatedDates,
-            facilityName: updatedFacilityName,
-            courtName: updatedFacilityName
-          };
-        })
-      );
-    }
-
     if (!suppressToast) {
       showToast(`Đã thêm học viên ${student.name} vào danh sách học bù ca hôm nay!`, 'success');
     }
+  };
+
+  // Xóa học viên khỏi danh sách học bù của ca học
+  const removeMakeupStudentFromSession = (sessionId: string, studentId: string) => {
+    setSessions(prev =>
+      prev.map(s => {
+        const hasStudent =
+          s.makeupStudents?.some(m => (m.studentId || (m as any).id) === studentId) ||
+          s.attendanceRecords?.some(r => (r.studentId || (r as any).id) === studentId && r.isMakeup);
+        const isTarget =
+          (sessionId && s.id === sessionId) ||
+          (hasStudent && (!sessionId || s.id === sessionId || (sessionId.includes(s.facilityId || '') && sessionId.includes(s.shiftId || ''))));
+
+        if (isTarget) {
+          const currentMakeup = s.makeupStudents || [];
+          const updatedMakeup = currentMakeup.filter(m => (m.studentId || (m as any).id) !== studentId);
+          const updatedRecords = (s.attendanceRecords || []).filter(
+            r => !((r.studentId || (r as any).id) === studentId && r.isMakeup)
+          );
+          return {
+            ...s,
+            makeupStudents: updatedMakeup,
+            attendanceRecords: updatedRecords,
+            totalStudents: Math.max(0, s.totalStudents - 1)
+          };
+        }
+        return s;
+      })
+    );
+    showToast('Đã xóa học viên khỏi danh sách học bù ca này!', 'info');
   };
 
   // Save Student Attendance with Leave Rules (4 sessions/month = 1 leave)
@@ -2246,7 +2591,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           coachAttendanceDone: Boolean(primaryCoachEnriched),
           coachAttendance: primaryCoachEnriched,
           totalStudents: sanitizedRecords.length,
-          attendanceRecords: sanitizedRecords
+          attendanceRecords: sanitizedRecords,
+          makeupStudents: sanitizedRecords.filter(r => r.isMakeup)
         };
         updatedSessions = [newSession, ...updatedSessions];
       } else {
@@ -2261,6 +2607,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               attendedByRole: currentUser.role,
               attendedAt: nowStr,
               attendanceRecords: sanitizedRecords,
+              makeupStudents: sanitizedRecords.filter(r => r.isMakeup),
               ...(coachEnriched ? { coachAttendanceDone: true, coachAttendance: coachEnriched } : {})
             };
           }
@@ -2542,7 +2889,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSessions(prev => {
       const updated = [...prev];
       dates.forEach(d => {
-        const targetShiftId = student.fixedShiftId || student.shiftId || 'CA04';
+        const targetShiftId = student.fixedShiftId || student.shiftId || 'CA01';
         const exists = updated.find(s => s.date === d && (s.classId === student.classId || (s.facilityId === student.facilityId && s.shiftId === targetShiftId)));
         if (exists) {
           if (!exists.attendanceRecords?.some(r => r.studentId === student.id)) {
@@ -2913,6 +3260,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     updatedSession: ScheduledSession,
     reason?: string
   ) => {
+    if (currentUser.role === 'COACH') {
+      showToast('Chỉ Admin và Quản lý cơ sở mới có quyền đổi lịch & ca buổi tập!', 'error');
+      return;
+    }
+
     setStudents(prev =>
       prev.map(student => {
         if (student.id !== studentId) return student;
@@ -3184,7 +3536,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         classes,
         students,
         coaches,
-        sessions,
+        sessions: allEffectiveSessions,
         payments,
         notifications,
         adminNotifications,
@@ -3211,6 +3563,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         saveCoachAttendance,
         saveUnifiedAttendance,
         addMakeupStudentToSession,
+        removeMakeupStudentFromSession,
         confirmPayment,
         addPayment,
         collectPaymentAtCourt,
@@ -3258,6 +3611,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateDailyClassNote,
         removeCoachFromDailyClass,
         assignCoachToDailyClass,
+        checkCoachShiftConflict,
         getDailyClasses,
         getClassById,
         holidays,

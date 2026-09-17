@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Modal } from '../components/common/Modal';
-import { Coach, Facility } from '../types';
+import { CenterHoliday, Coach, Facility } from '../types';
 
 export const ClassesView: React.FC = () => {
   const {
@@ -41,6 +41,7 @@ export const ClassesView: React.FC = () => {
     getDailyClasses,
     addCoachToDailyClass,
     removeCoachFromDailyClass,
+    checkCoachShiftConflict,
     updateDailyClassNote,
     holidays,
     declareHoliday,
@@ -93,8 +94,8 @@ export const ClassesView: React.FC = () => {
     return false;
   };
 
-  // Permission helper for holidays
-  const canManageHolidays = currentUser.role === 'ADMIN' || currentUser.role === 'FACILITY_MANAGER';
+  // Permission helper for holidays: only ADMIN can declare/manage holidays
+  const canManageHolidays = currentUser.role === 'ADMIN';
 
   // Modal State for Center Holiday
   const [isHolidayModalOpen, setIsHolidayModalOpen] = useState<boolean>(false);
@@ -105,19 +106,17 @@ export const ClassesView: React.FC = () => {
   const [holidayFacilityInput, setHolidayFacilityInput] = useState<string>('ALL');
 
   const handleOpenHolidayModal = (tab: 'declare' | 'list' = 'declare') => {
+    if (!canManageHolidays) return;
     setHolidayTab(tab);
     setHolidayStartDateInput(selectedDate);
     setHolidayEndDateInput(selectedDate);
-    if (activeFacility && isFacilityManager) {
-      setHolidayFacilityInput(activeFacility.id);
-    } else {
-      setHolidayFacilityInput('ALL');
-    }
+    setHolidayFacilityInput('ALL');
     setIsHolidayModalOpen(true);
   };
 
   const handleDeclareHolidaySubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageHolidays) return;
     if (!holidayNameInput.trim() || !holidayStartDateInput) return;
 
     const targetFacility = facilities.find(f => f.id === holidayFacilityInput);
@@ -382,17 +381,27 @@ export const ClassesView: React.FC = () => {
     return coaches.filter(c => !assignedIds.includes(c.id));
   }, [currentModalClass, coaches]);
 
+  // Coaches eligible to be selected (available AND no cross-facility conflict for this shift)
+  const selectableCoachesToAdd = useMemo(() => {
+    if (!currentModalClass) return [];
+    return availableCoachesToAdd.filter(c => !checkCoachShiftConflict(c.id, currentModalClass.id));
+  }, [availableCoachesToAdd, currentModalClass, checkCoachShiftConflict]);
+
   const handleToggleCoachSelect = (coachId: string) => {
+    if (currentModalClass && checkCoachShiftConflict(coachId, currentModalClass.id)) {
+      return;
+    }
     setSelectedCoachIdsToAdd(prev =>
       prev.includes(coachId) ? prev.filter(id => id !== coachId) : [...prev, coachId]
     );
   };
 
   const handleToggleSelectAll = () => {
-    if (selectedCoachIdsToAdd.length === availableCoachesToAdd.length) {
+    if (selectableCoachesToAdd.length === 0) return;
+    if (selectedCoachIdsToAdd.length === selectableCoachesToAdd.length) {
       setSelectedCoachIdsToAdd([]);
     } else {
-      setSelectedCoachIdsToAdd(availableCoachesToAdd.map(c => c.id));
+      setSelectedCoachIdsToAdd(selectableCoachesToAdd.map(c => c.id));
     }
   };
 
@@ -1343,13 +1352,13 @@ export const ClassesView: React.FC = () => {
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                 Thêm Huấn Luyện Viên Mới Vào Ca
               </label>
-              {availableCoachesToAdd.length > 1 && (
+              {selectableCoachesToAdd.length > 1 && (
                 <button
                   type="button"
                   onClick={handleToggleSelectAll}
                   className="text-[11px] font-bold text-[#10B981] hover:underline cursor-pointer"
                 >
-                  {selectedCoachIdsToAdd.length === availableCoachesToAdd.length
+                  {selectedCoachIdsToAdd.length === selectableCoachesToAdd.length
                     ? 'Bỏ chọn tất cả'
                     : 'Chọn tất cả'}
                 </button>
@@ -1364,25 +1373,50 @@ export const ClassesView: React.FC = () => {
               <div className="space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-1">
                   {availableCoachesToAdd.map(c => {
+                    const conflict = currentModalClass ? checkCoachShiftConflict(c.id, currentModalClass.id) : null;
                     const isSelected = selectedCoachIdsToAdd.includes(c.id);
+                    const isDisabled = Boolean(conflict);
+
                     return (
                       <label
                         key={c.id}
-                        className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
-                          isSelected
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold shadow-2xs'
-                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        className={`flex items-start sm:items-center justify-between gap-2.5 p-2.5 rounded-xl border transition-all select-none ${
+                          isDisabled
+                            ? 'bg-slate-100/75 border-slate-200 text-slate-400 cursor-not-allowed'
+                            : isSelected
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold shadow-2xs cursor-pointer'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer'
                         }`}
+                        title={conflict ? `Đang dạy ca ${conflict.conflictShiftName} tại ${conflict.conflictFacilityName}` : undefined}
                       >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => handleToggleCoachSelect(c.id)}
-                          className="w-4 h-4 rounded text-[#10B981] focus:ring-[#10B981] accent-[#10B981] cursor-pointer"
-                        />
-                        <span className="text-xs font-semibold truncate">
-                          {c.name}
-                        </span>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            disabled={isDisabled}
+                            onChange={() => !isDisabled && handleToggleCoachSelect(c.id)}
+                            className={`w-4 h-4 rounded text-[#10B981] focus:ring-[#10B981] accent-[#10B981] ${
+                              isDisabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'
+                            }`}
+                          />
+                          <div className="min-w-0">
+                            <span className={`text-xs font-semibold block truncate ${isDisabled ? 'text-slate-500' : ''}`}>
+                              {c.name}
+                            </span>
+                            {conflict && (
+                              <span className="text-[10px] text-amber-600 block truncate flex items-center gap-1 font-medium mt-0.5">
+                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                                Đang dạy tại {conflict.conflictFacilityName}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {conflict && (
+                          <span className="shrink-0 px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-md border border-amber-200">
+                            Trùng ca
+                          </span>
+                        )}
                       </label>
                     );
                   })}
@@ -1392,6 +1426,12 @@ export const ClassesView: React.FC = () => {
                   <span className="text-xs text-slate-500 font-medium">
                     Đã chọn: <strong className="text-[#10B981] font-bold">{selectedCoachIdsToAdd.length}</strong> HLV để thêm
                   </span>
+                  {availableCoachesToAdd.some(c => currentModalClass && checkCoachShiftConflict(c.id, currentModalClass.id)) && (
+                    <span className="text-[11px] text-amber-600 font-medium flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      Một số HLV trùng ca tại cơ sở khác
+                    </span>
+                  )}
                 </div>
               </div>
             )}
