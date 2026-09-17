@@ -2169,8 +2169,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ) => {
     const dateToCheck = sessionMeta?.date;
     const isToday = !dateToCheck || dateToCheck === '2026-08-28' || dateToCheck === new Date().toISOString().split('T')[0];
-    if (currentUser.role === 'COACH' && !isToday) {
-      showToast('Huấn luyện viên không có quyền thêm học viên học bù vào những ngày khác hôm nay!', 'error');
+    if (currentUser.role === 'COACH') {
+      showToast('Huấn luyện viên không có quyền thêm học viên học bù!', 'error');
       return;
     }
 
@@ -2255,6 +2255,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Xóa học viên khỏi danh sách học bù của ca học
   const removeMakeupStudentFromSession = (sessionId: string, studentId: string) => {
+    if (currentUser.role === 'COACH') {
+      showToast('Huấn luyện viên không có quyền xóa học viên học bù!', 'error');
+      return;
+    }
+
     setSessions(prev =>
       prev.map(s => {
         const hasStudent =
@@ -2285,7 +2290,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Save Student Attendance with Leave Rules (4 sessions/month = 1 leave)
   const saveAttendance = (sessionId: string, records: AttendanceRecordItem[], classId: string, date: string) => {
-    const isToday = date === '2026-08-28' || date === new Date().toISOString().split('T')[0];
+    const systemToday = '2026-08-28';
+    const realToday = new Date().toISOString().split('T')[0];
+    const isToday = date === systemToday || date === realToday;
+    const isFuture = date > systemToday && date > realToday;
+
+    if (isFuture) {
+      showToast('Chưa đến ngày ca học! Không thể điểm danh trước ngày mai/tương lai (chỉ được phép thêm học bù).', 'warning');
+      return;
+    }
+
     if (currentUser.role === 'COACH' && !isToday) {
       showToast('Huấn luyện viên không có quyền điểm danh/sửa những ngày khác hôm nay!', 'error');
       return;
@@ -2497,7 +2511,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }>;
   }) => {
     const { sessionId, records, classId, date, shiftId, coachRecords = [] } = params;
-    const isToday = date === '2026-08-28' || date === new Date().toISOString().split('T')[0];
+    const systemToday = '2026-08-28';
+    const realToday = new Date().toISOString().split('T')[0];
+    const isToday = date === systemToday || date === realToday;
+    const isFuture = date > systemToday && date > realToday;
+
+    if (isFuture) {
+      showToast('Chưa đến ngày ca học! Không thể điểm danh trước ngày mai/tương lai (chỉ được phép thêm học bù).', 'warning');
+      return;
+    }
+
     if (currentUser.role === 'COACH' && !isToday) {
       showToast('Huấn luyện viên không có quyền điểm danh/sửa những ngày khác hôm nay!', 'error');
       return;

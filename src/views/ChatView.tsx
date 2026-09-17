@@ -383,7 +383,7 @@ export const ChatView: React.FC = () => {
       </div>
 
       {/* Main Chat Box */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col h-[650px]">
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col min-h-[550px] h-[calc(100vh-210px)] sm:h-[680px]">
         {/* Chat Box Header Bar */}
         <div className="px-4 py-3 bg-slate-50/90 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2.5 text-xs">
           <div className="flex items-center gap-1.5">
@@ -401,14 +401,34 @@ export const ChatView: React.FC = () => {
             <button
               type="button"
               onClick={() => setFilterType('notices')}
-              className={`px-3 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                 filterType === 'notices'
                   ? 'bg-amber-500 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <AlertCircle className="w-3.5 h-3.5" />
-              <span>Yêu cầu xác nhận ({chatMessages.filter(m => m.isNotice).length})</span>
+              <span>📌 Thông báo</span>
+              {noticesCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/20 font-black">
+                  {noticesCount}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterType('mentions')}
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                filterType === 'mentions'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>@ Nhắc tên</span>
+              {myMentionsCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/20 font-black">
+                  {myMentionsCount}
+                </span>
+              )}
             </button>
           </div>
 
@@ -432,7 +452,7 @@ export const ChatView: React.FC = () => {
         </div>
 
         {/* Message Feed Area */}
-        <div className="flex-1 p-4 sm:p-5 overflow-y-auto space-y-4 bg-slate-50/40">
+        <div className="flex-1 p-3 sm:p-5 overflow-y-auto space-y-3.5 sm:space-y-4 bg-slate-50/40">
           {filteredMessages.length === 0 ? (
             <div className="py-16 text-center space-y-2">
               <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto text-lg font-bold">
@@ -474,8 +494,8 @@ export const ChatView: React.FC = () => {
                     title={`Nhấp để nhắc tên ${msg.senderName}`}
                   />
 
-                  {/* Message Bubble Container (Chiếm tối đa 60% chiều rộng chat) */}
-                  <div className={`max-w-[60%] space-y-1 ${isMine ? 'items-end' : 'items-start'}`}>
+                  {/* Message Bubble Container (Tối ưu độ rộng trên mobile & desktop) */}
+                  <div className={`max-w-[85%] sm:max-w-[75%] space-y-1 ${isMine ? 'items-end' : 'items-start'}`}>
                     {/* Sender Info Line */}
                     <div className={`flex items-center gap-1.5 text-xs flex-wrap ${isMine ? 'justify-end' : 'justify-start'}`}>
                       <span
@@ -515,10 +535,10 @@ export const ChatView: React.FC = () => {
                     )}
 
                     {/* Bubble & Quick Action Row (Messenger FB Style) */}
-                    <div className={`relative flex items-center gap-1.5 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <div className={`relative flex items-end sm:items-center gap-1.5 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
                       {/* Bubble Content */}
                       <div
-                        className={`relative p-3.5 rounded-2xl text-sm leading-relaxed transition-all shadow-2xs ${
+                        className={`relative px-3.5 py-2.5 sm:p-3.5 rounded-2xl text-sm leading-relaxed transition-all shadow-2xs ${
                           msg.isNotice
                             ? 'bg-amber-50 border border-amber-200 text-amber-950'
                             : isMine
@@ -538,7 +558,7 @@ export const ChatView: React.FC = () => {
                         )}
 
                         {/* Main Message Text with @ Mention Pills */}
-                        <p className="whitespace-pre-line font-normal">
+                        <p className="whitespace-pre-line font-normal break-words">
                           {renderMessageContent(msg.content, isMine)}
                         </p>
 

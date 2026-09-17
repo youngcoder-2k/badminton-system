@@ -543,6 +543,10 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
 
   const handleAddMakeupConfirm = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isCoach) {
+      showToast('Huấn luyện viên không có quyền thêm học viên học bù!', 'error');
+      return;
+    }
     if (selectedMakeupStudentIds.length === 0) return;
 
     const targetStudents = students.filter(s => selectedMakeupStudentIds.includes(s.id));
@@ -579,6 +583,10 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
   };
 
   const handleRemoveMakeup = (studentId: string) => {
+    if (isCoach) {
+      showToast('Huấn luyện viên không có quyền xóa học viên học bù!', 'error');
+      return;
+    }
     const targetStudent = students.find(s => s.id === studentId);
     if (window.confirm(`Bạn có chắc muốn xóa học viên ${targetStudent?.name || studentId} khỏi danh sách học bù ca này?`)) {
       const sessionId = sessionForClass?.id || '';
@@ -636,14 +644,16 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
         </button>
 
         <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
-          <button
-            type="button"
-            onClick={() => setIsMakeupModalOpen(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer whitespace-nowrap"
-          >
-            <UserPlus className="w-4 h-4 shrink-0" />
-            <span>THÊM HỌC BÙ</span>
-          </button>
+          {!isCoach && (
+            <button
+              type="button"
+              onClick={() => setIsMakeupModalOpen(true)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer whitespace-nowrap"
+            >
+              <UserPlus className="w-4 h-4 shrink-0" />
+              <span>THÊM HỌC BÙ</span>
+            </button>
+          )}
 
           <button
             onClick={() => handleGoAttendance()}
@@ -839,15 +849,17 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
               {classStudents.length} học viên theo học {classMakeupRecords.length > 0 && `(${classMakeupRecords.length} học bù)`}
             </span>
 
-            <button
-              type="button"
-              onClick={() => setIsMakeupModalOpen(true)}
-              className="px-3 py-1.5 bg-amber-50 text-amber-800 hover:bg-amber-500 hover:text-white border border-amber-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs shrink-0"
-              title="Thêm học viên học bù vào ca này"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>Thêm học bù</span>
-            </button>
+            {!isCoach && (
+              <button
+                type="button"
+                onClick={() => setIsMakeupModalOpen(true)}
+                className="px-3 py-1.5 bg-amber-50 text-amber-800 hover:bg-amber-500 hover:text-white border border-amber-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs shrink-0"
+                title="Thêm học viên học bù vào ca này"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Thêm học bù</span>
+              </button>
+            )}
 
             {canManage && studentViewMode === 'by_coach' && (
               <button

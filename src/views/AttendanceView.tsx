@@ -107,6 +107,13 @@ export const AttendanceView: React.FC = () => {
     return selectedDate === systemToday || selectedDate === realToday;
   }, [selectedDate]);
 
+  // Kiểm tra nếu là ngày mai hoặc ngày tương lai (chưa đến ngày ca học)
+  const isSelectedDateFuture = useMemo(() => {
+    const systemToday = '2026-08-28';
+    const realToday = new Date().toISOString().split('T')[0];
+    return selectedDate > systemToday && selectedDate > realToday;
+  }, [selectedDate]);
+
   const isCoachRestricted = isCoach && !isSelectedDateToday;
 
   // Tuyệt đối đảm bảo Quản lý cơ sở luôn luôn ở đúng cơ sở do mình quản lý
@@ -580,6 +587,15 @@ export const AttendanceView: React.FC = () => {
   }, [facilityCoachItems]);
 
   const handleStatusChange = (studentId: string, status: AttendanceStatus) => {
+    if (!isSelectedDateToday) {
+      if (isSelectedDateFuture) {
+        showToast('Chưa đến ngày ca học! Không thể điểm danh trước ngày mai/tương lai (chỉ được phép thêm học bù).', 'warning');
+      } else {
+        showToast('Đã qua ngày ca học! Không thể chỉnh sửa điểm danh ngày trước.', 'warning');
+      }
+      return;
+    }
+
     if (isCoachRestricted) {
       showToast('Huấn luyện viên không có quyền điểm danh hoặc sửa điểm danh những ngày khác hôm nay!', 'error');
       return;
@@ -618,6 +634,15 @@ export const AttendanceView: React.FC = () => {
   };
 
   const handleMarkAll = (status: AttendanceStatus) => {
+    if (!isSelectedDateToday) {
+      if (isSelectedDateFuture) {
+        showToast('Chưa đến ngày ca học! Không thể điểm danh trước ngày mai/tương lai (chỉ được phép thêm học bù).', 'warning');
+      } else {
+        showToast('Đã qua ngày ca học! Không thể chỉnh sửa điểm danh ngày trước.', 'warning');
+      }
+      return;
+    }
+
     if (isCoachRestricted) {
       showToast('Huấn luyện viên không có quyền điểm danh hoặc sửa điểm danh những ngày khác hôm nay!', 'error');
       return;
@@ -688,6 +713,15 @@ export const AttendanceView: React.FC = () => {
 
   // Handler DUY NHẤT duyệt điểm danh cho TẤT CẢ học viên & Huấn luyện viên
   const handleApproveAllStudentsAndCoaches = () => {
+    if (!isSelectedDateToday) {
+      if (isSelectedDateFuture) {
+        showToast('Chưa đến ngày ca học! Không thể điểm danh trước ngày mai/tương lai (chỉ được phép thêm học bù).', 'warning');
+      } else {
+        showToast('Đã qua ngày ca học! Không thể chỉnh sửa kết quả ngày trước.', 'warning');
+      }
+      return;
+    }
+
     if (isCoachRestricted) {
       showToast('Huấn luyện viên không có quyền điểm danh hoặc sửa điểm danh những ngày khác hôm nay!', 'error');
       return;
@@ -812,12 +846,12 @@ export const AttendanceView: React.FC = () => {
 
   const handleAddMakeupConfirm = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isCoachRestricted) {
-      showToast('Huấn luyện viên không có quyền thêm học viên học bù vào những ngày khác hôm nay!', 'error');
+    if (isCoach) {
+      showToast('Huấn luyện viên không có quyền thêm học viên học bù!', 'error');
       return;
     }
-    if (isFacilityManagerLocked) {
-      showToast('Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không có quyền thêm học viên học bù cho ngày trước hoặc ngày trong tương lai!', 'warning');
+    if (isFacilityManagerLocked && isSelectedDatePast) {
+      showToast('Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không có quyền thêm học viên học bù cho ngày trước!', 'warning');
       return;
     }
     if (selectedMakeupStudentIds.length === 0) return;
@@ -887,7 +921,7 @@ export const AttendanceView: React.FC = () => {
         {/* Action Buttons (Session Mode) */}
         {viewTab === 'session' && (
           <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0">
-            {!isCoach && !isFacilityManagerLocked && (
+            {!isCoach && !isTodayHoliday && (
               <button
                 onClick={() => setIsMakeupModalOpen(true)}
                 className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer whitespace-nowrap"
@@ -901,6 +935,14 @@ export const AttendanceView: React.FC = () => {
               <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-amber-100 text-amber-900 font-bold text-xs sm:text-sm rounded-xl border border-amber-300 shadow-xs">
                 <PartyPopper className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>NGÀY NGHỈ LỄ (TẠM NGƯNG ĐIỂM DANH)</span>
+              </div>
+            ) : isSelectedDateFuture ? (
+              <div
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-500 font-bold text-xs sm:text-sm rounded-xl border border-slate-200 shadow-2xs select-none"
+                title="Chưa đến ngày ca học. Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)!"
+              >
+                <Clock className="w-4 h-4 text-slate-400 shrink-0" />
+                <span>CHƯA ĐẾN NGÀY ĐIỂM DANH (CHỈ THÊM HỌC BÙ)</span>
               </div>
             ) : isCoachRestricted ? (
               <div
@@ -917,6 +959,14 @@ export const AttendanceView: React.FC = () => {
               >
                 <Lock className="w-4 h-4 text-slate-400 shrink-0" />
                 <span>CHẾ ĐỘ XEM (ĐÃ XÁC NHẬN - KHÔNG THỂ SỬA)</span>
+              </div>
+            ) : !isSelectedDateToday ? (
+              <div
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-500 font-bold text-xs sm:text-sm rounded-xl border border-slate-200 shadow-2xs select-none cursor-not-allowed"
+                title="Chỉ có thể điểm danh trong ngày hôm nay"
+              >
+                <Lock className="w-4 h-4 text-slate-400 shrink-0" />
+                <span>CHẾ ĐỘ XEM (CHỈ ĐƯỢC ĐIỂM DANH HÔM NAY)</span>
               </div>
             ) : (
               <button
@@ -998,6 +1048,18 @@ export const AttendanceView: React.FC = () => {
         <>
 
 
+
+      {/* Banner thông báo khi xem ngày mai hoặc các ngày trong tương lai */}
+      {isSelectedDateFuture && (
+        <div className="py-2.5 px-4 bg-sky-50/95 border border-sky-200 rounded-2xl flex items-center gap-2.5 text-xs text-sky-950 shadow-2xs animate-in fade-in">
+          <div className="w-5 h-5 rounded-lg bg-sky-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+            <Calendar className="w-3.5 h-3.5" />
+          </div>
+          <span className="font-semibold leading-relaxed flex-1">
+            <strong>Chưa đến ngày ca học:</strong> Hệ thống chỉ cho phép điểm danh trong ngày hôm nay. Đối với ngày mai hoặc các ngày trong tương lai, bạn chỉ có thể thao tác <strong>Thêm học bù</strong> cho học viên.
+          </span>
+        </div>
+      )}
 
       {/* Banner thông báo khi QL cơ sở xem ngày trước/sau hôm nay đã xác nhận điểm danh */}
       {isFacilityManagerLocked && (
@@ -1128,7 +1190,7 @@ export const AttendanceView: React.FC = () => {
           </div>
 
           {/* Quick Mark All Buttons for Students */}
-          {!isFacilityManagerLocked && !isCoachRestricted && (
+          {!isFacilityManagerLocked && !isCoachRestricted && isSelectedDateToday && (
             <div className="flex items-center gap-2">
               <button
                 onClick={() => handleMarkAll('Present')}
@@ -1258,7 +1320,7 @@ export const AttendanceView: React.FC = () => {
                             : 'VẮNG'}
                         </span>
                       </div>
-                      {!isCoach && !isFacilityManagerLocked && (
+                      {!isCoach && !isFacilityManagerLocked && isSelectedDateToday && (
                         <button
                           type="button"
                           onClick={() => {
@@ -1301,7 +1363,7 @@ export const AttendanceView: React.FC = () => {
                       </span>
                     </div>
 
-                    {!isCoach && !isFacilityManagerLocked && (
+                    {!isCoach && !isFacilityManagerLocked && isSelectedDateToday && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1319,7 +1381,7 @@ export const AttendanceView: React.FC = () => {
                       </button>
                     )}
                   </div>
-                ) : !isCoach && !isFacilityManagerLocked ? (
+                ) : !isCoach && !isFacilityManagerLocked && isSelectedDateToday ? (
                   <div className="w-full sm:w-auto shrink-0 flex items-center gap-1.5">
                     <div className="grid grid-cols-3 gap-1.5 w-full sm:w-auto flex-1">
                       <button
@@ -1403,9 +1465,9 @@ export const AttendanceView: React.FC = () => {
                     )}
                   </div>
                 ) : (
-                  <div className="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1 shrink-0">
-                    <Clock className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Chưa duyệt</span>
+                  <div className="px-2.5 py-1 rounded-xl bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold flex items-center gap-1 shrink-0">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                    <span>{isSelectedDateFuture ? 'Chưa đến ngày' : 'Chưa duyệt'}</span>
                   </div>
                 )}
               </div>
@@ -1419,16 +1481,28 @@ export const AttendanceView: React.FC = () => {
         <div className="flex items-center justify-between px-1">
           <h2 className="text-xs font-extrabold text-[#0F172A] uppercase tracking-wider flex items-center gap-2">
             <span>Danh Sách Học Viên Tại Cơ Sở ({classStudents.length})</span>
-            {isFacilityManagerLocked && (
+            {isSelectedDateFuture && (
+              <span className="text-[10px] font-extrabold text-sky-800 bg-sky-50 px-2.5 py-0.5 rounded-full border border-sky-200 normal-case tracking-normal flex items-center gap-1">
+                <Clock className="w-3 h-3 text-sky-600" />
+                Chưa đến ngày điểm danh
+              </span>
+            )}
+            {!isSelectedDateFuture && isFacilityManagerLocked && (
               <span className="text-[10px] font-extrabold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 normal-case tracking-normal flex items-center gap-1">
                 <Lock className="w-3 h-3 text-amber-600" />
                 Chế độ chỉ xem (Đã xác nhận điểm danh)
               </span>
             )}
-            {isCoachRestricted && (
+            {!isSelectedDateFuture && !isFacilityManagerLocked && isCoachRestricted && (
               <span className="text-[10px] font-extrabold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 normal-case tracking-normal flex items-center gap-1">
                 <Lock className="w-3 h-3 text-amber-600" />
                 Chế độ chỉ xem
+              </span>
+            )}
+            {!isSelectedDateFuture && !isFacilityManagerLocked && !isCoachRestricted && !isSelectedDateToday && (
+              <span className="text-[10px] font-extrabold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 normal-case tracking-normal flex items-center gap-1">
+                <Lock className="w-3 h-3 text-amber-600" />
+                Chỉ được điểm danh hôm nay
               </span>
             )}
           </h2>
@@ -1453,7 +1527,7 @@ export const AttendanceView: React.FC = () => {
             const currentStatus = attendanceMap[student.id] || 'Present';
             const allowedLeaves = student.allowedLeaves ?? Math.floor(student.packageSessions / 4);
             const isOutOfLeaves = (student.usedLeaves || 0) >= allowedLeaves;
-            const isLocked = isFacilityManagerLocked || isCoachRestricted;
+            const isLocked = !isSelectedDateToday || isFacilityManagerLocked || isCoachRestricted;
 
             return (
               <div
@@ -1526,7 +1600,11 @@ export const AttendanceView: React.FC = () => {
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80 border border-slate-200/80'
                     }`}
                     title={
-                      isCoachRestricted
+                      isSelectedDateFuture
+                        ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
+                        : !isSelectedDateToday
+                        ? 'Chỉ có thể điểm danh trong ngày hôm nay'
+                        : isCoachRestricted
                         ? 'HLV không có quyền điểm danh/sửa ngày khác hôm nay'
                         : isFacilityManagerLocked
                         ? 'Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không thể sửa ngày trước hoặc ngày trong tương lai'
@@ -1565,7 +1643,11 @@ export const AttendanceView: React.FC = () => {
                         : ''
                     }`}
                     title={
-                      isCoachRestricted
+                      isSelectedDateFuture
+                        ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
+                        : !isSelectedDateToday
+                        ? 'Chỉ có thể điểm danh trong ngày hôm nay'
+                        : isCoachRestricted
                         ? 'HLV không có quyền điểm danh/sửa ngày khác hôm nay'
                         : isFacilityManagerLocked
                         ? 'Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không thể sửa ngày trước hoặc ngày trong tương lai'
@@ -1592,7 +1674,11 @@ export const AttendanceView: React.FC = () => {
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80 border border-slate-200/80'
                     }`}
                     title={
-                      isCoachRestricted
+                      isSelectedDateFuture
+                        ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
+                        : !isSelectedDateToday
+                        ? 'Chỉ có thể điểm danh trong ngày hôm nay'
+                        : isCoachRestricted
                         ? 'HLV không có quyền điểm danh/sửa ngày khác hôm nay'
                         : isFacilityManagerLocked
                         ? 'Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không thể sửa ngày trước hoặc ngày trong tương lai'
@@ -1625,7 +1711,7 @@ export const AttendanceView: React.FC = () => {
             const mAllowedLeaves = fullStudent ? (fullStudent.allowedLeaves ?? Math.floor((fullStudent.packageSessions || 12) / 4)) : 3;
             const mUsedLeaves = fullStudent?.usedLeaves || 0;
             const mOutOfLeaves = fullStudent ? mUsedLeaves >= mAllowedLeaves : false;
-            const isLocked = isFacilityManagerLocked || isCoachRestricted;
+            const isLocked = !isSelectedDateToday || isFacilityManagerLocked || isCoachRestricted;
 
             return (
               <div
@@ -1675,7 +1761,7 @@ export const AttendanceView: React.FC = () => {
                       </span>
                     </span>
 
-                    {!isLocked && (
+                    {!isCoach && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1707,7 +1793,11 @@ export const AttendanceView: React.FC = () => {
                           : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
                       }`}
                       title={
-                        isCoachRestricted
+                        isSelectedDateFuture
+                          ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
+                          : !isSelectedDateToday
+                          ? 'Chỉ có thể điểm danh trong ngày hôm nay'
+                          : isCoachRestricted
                           ? 'HLV không có quyền điểm danh/sửa ngày khác hôm nay'
                           : isFacilityManagerLocked
                           ? 'Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không thể sửa ngày trước hoặc ngày trong tương lai'
@@ -1736,7 +1826,11 @@ export const AttendanceView: React.FC = () => {
                           : ''
                       }`}
                       title={
-                        isCoachRestricted
+                        isSelectedDateFuture
+                          ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
+                          : !isSelectedDateToday
+                          ? 'Chỉ có thể điểm danh trong ngày hôm nay'
+                          : isCoachRestricted
                           ? 'HLV không có quyền điểm danh/sửa ngày khác hôm nay'
                           : isFacilityManagerLocked
                           ? 'Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không thể sửa ngày trước hoặc ngày trong tương lai'
@@ -1763,7 +1857,11 @@ export const AttendanceView: React.FC = () => {
                           : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
                       }`}
                       title={
-                        isCoachRestricted
+                        isSelectedDateFuture
+                          ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
+                          : !isSelectedDateToday
+                          ? 'Chỉ có thể điểm danh trong ngày hôm nay'
+                          : isCoachRestricted
                           ? 'HLV không có quyền điểm danh/sửa ngày khác hôm nay'
                           : isFacilityManagerLocked
                           ? 'Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không thể sửa ngày trước hoặc ngày trong tương lai'
@@ -1776,7 +1874,7 @@ export const AttendanceView: React.FC = () => {
                   </div>
 
                   {/* Desktop delete button */}
-                  {!isLocked && (
+                  {!isCoach && (
                     <button
                       type="button"
                       onClick={() => {
@@ -1797,7 +1895,7 @@ export const AttendanceView: React.FC = () => {
 
 
       {/* Floating Bottom Bar on Mobile for Instant 1-tap Save */}
-      {!isCoachRestricted && !isFacilityManagerLocked && (
+      {!isCoachRestricted && !isFacilityManagerLocked && isSelectedDateToday && (
         <div className="fixed bottom-16 left-0 right-0 p-3.5 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-2xl z-30 sm:hidden flex items-center justify-between gap-3">
           <div className="text-xs">
             <span className="text-slate-400 block font-semibold">Tiến độ ca:</span>
@@ -1815,6 +1913,25 @@ export const AttendanceView: React.FC = () => {
                 ? 'CẬP NHẬT ĐIỂM DANH'
                 : 'DUYỆT ĐIỂM DANH'}
             </span>
+          </button>
+        </div>
+      )}
+
+      {/* Floating Bottom Bar on Mobile for Future Date: Quick Add Makeup */}
+      {isSelectedDateFuture && !isCoach && (
+        <div className="fixed bottom-16 left-0 right-0 p-3 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-2xl z-30 sm:hidden flex items-center justify-between gap-3">
+          <div className="text-xs">
+            <span className="text-amber-600 block font-bold">Ngày mai / Tương lai</span>
+            <span className="text-slate-400 font-medium text-[11px]">
+              Chưa đến ngày điểm danh
+            </span>
+          </div>
+          <button
+            onClick={() => setIsMakeupModalOpen(true)}
+            className="flex-1 py-2.5 px-4 bg-amber-500 active:scale-95 text-white font-bold text-xs rounded-xl shadow-md shadow-amber-900/20 flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>THÊM HỌC BÙ</span>
           </button>
         </div>
       )}
