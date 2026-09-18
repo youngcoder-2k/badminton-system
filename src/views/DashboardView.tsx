@@ -403,37 +403,6 @@ export const DashboardView: React.FC = () => {
           </div>
         </div>
 
-        {/* Khối Banner Nhắc Nhở & Đăng Ký Ca Dạy Nổi Bật Dành Riêng Cho HLV */}
-        <div className="bg-gradient-to-br from-emerald-50/90 via-teal-50/60 to-emerald-100/70 rounded-2xl sm:rounded-3xl border-2 border-emerald-300/80 p-4 sm:p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-start sm:items-center gap-3.5 sm:gap-4">
-            <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-500/25">
-              <CalendarPlus className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-sm sm:text-lg font-black text-[#0F172A]">
-                  Đăng Ký Lịch Dạy Hàng Ngày
-                </h3>
-                <span className="px-2 sm:px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wide shadow-2xs">
-                  Thao tác hàng ngày
-                </span>
-              </div>
-              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                Huấn luyện viên vui lòng chủ động đăng ký ngày dạy mỗi ngày để Ban Quản Trị kịp thời phân công sân và ca dạy thích hợp.
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsCoachModalOpen(true)}
-            className="inline-flex items-center justify-center gap-2 px-5 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs sm:text-sm rounded-xl sm:rounded-2xl shadow-md shadow-emerald-600/30 ring-2 ring-emerald-400/40 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer whitespace-nowrap w-full sm:w-auto shrink-0 group"
-          >
-            <CalendarPlus className="w-4 h-4 group-hover:rotate-12 transition-transform" />
-            <span>Mở Đăng Ký Ca Dạy</span>
-            <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-          </button>
-        </div>
 
         {/* Coach Today Sessions List - Khôi phục theo đúng ảnh người dùng yêu cầu */}
         <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 p-4 sm:p-5 shadow-xs">
