@@ -51,7 +51,19 @@ interface AppContextType {
   switchRole: (role: UserRole, coachId?: string) => void;
   activeTab: string;
   selectedId: string | null;
-  navigate: (tab: string, id?: string | null) => void;
+  navigate: (tab: string, id?: string | null, source?: string) => void;
+  classDetailSource: string | null;
+  setClassDetailSource: (source: string | null) => void;
+  classesFacilityId: string | null;
+  setClassesFacilityId: (id: string | null) => void;
+  classesDate: string;
+  setClassesDate: (date: string) => void;
+  classesShiftId: string;
+  setClassesShiftId: (id: string) => void;
+  classesCoachId: string;
+  setClassesCoachId: (id: string) => void;
+  classesSearchQuery: string;
+  setClassesSearchQuery: (query: string) => void;
   
   // Data lists
   facilities: Facility[];
@@ -283,6 +295,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentUser, setCurrentUser] = useState<UserProfile>(INITIAL_USERS[0]);
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [classDetailSource, setClassDetailSource] = useState<string | null>(null);
+  const [classesFacilityId, setClassesFacilityId] = useState<string | null>(null);
+  const [classesDate, setClassesDate] = useState<string>('2026-08-28');
+  const [classesShiftId, setClassesShiftId] = useState<string>('ALL');
+  const [classesCoachId, setClassesCoachId] = useState<string>('ALL');
+  const [classesSearchQuery, setClassesSearchQuery] = useState<string>('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
   
   const [facilities, setFacilities] = useState<Facility[]>(INITIAL_FACILITIES);
@@ -447,7 +465,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, 3500);
   }, [removeToast]);
 
-  const navigate = (tab: string, id: string | null = null) => {
+  const navigate = (tab: string, id: string | null = null, source?: string) => {
+    if (tab === 'classes') {
+      if (id) {
+        setClassDetailSource(source || (activeTab === 'classes' ? 'classes' : activeTab));
+      } else {
+        if (activeTab !== 'classes') {
+          setClassesFacilityId(null);
+          setClassesShiftId('ALL');
+          setClassesCoachId('ALL');
+          setClassesSearchQuery('');
+        }
+      }
+    }
     setActiveTab(tab);
     setSelectedId(id);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3601,6 +3631,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activeTab,
         selectedId,
         navigate,
+        classDetailSource,
+        setClassDetailSource,
+        classesFacilityId,
+        setClassesFacilityId,
+        classesDate,
+        setClassesDate,
+        classesShiftId,
+        setClassesShiftId,
+        classesCoachId,
+        setClassesCoachId,
+        classesSearchQuery,
+        setClassesSearchQuery,
         facilities,
         courts,
         shifts,

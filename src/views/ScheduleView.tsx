@@ -409,7 +409,7 @@ export const ScheduleView: React.FC = () => {
       });
       navigate('attendance');
     } else {
-      navigate('classes', dynamicClassId);
+      navigate('classes', dynamicClassId, 'schedule');
     }
   };
 

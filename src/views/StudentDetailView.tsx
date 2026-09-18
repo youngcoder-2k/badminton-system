@@ -891,68 +891,56 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
         <div className="bg-white rounded-3xl border border-slate-100 shadow-xs overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex items-center justify-between">
             <h3 className="font-bold text-base text-[#0F172A]">Lịch Sử Thu Học Phí</h3>
+            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600">
+              {studentPayments.length} bản ghi
+            </span>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-sm">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  <th className="py-3.5 px-5">Mã phiếu</th>
-                  <th className="py-3.5 px-4">Số tiền</th>
-                  <th className="py-3.5 px-4">Kỳ học phí</th>
-                  <th className="py-3.5 px-4">Hạn nộp / Ngày nộp</th>
-                  <th className="py-3.5 px-4">Hình thức</th>
-                  <th className="py-3.5 px-4">Trạng thái</th>
-                  <th className="py-3.5 px-5 text-right">Thao tác</th>
+                <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  <th className="py-3 px-3 sm:px-5">Kỳ học phí</th>
+                  <th className="py-3 px-2 sm:px-4">Số tiền</th>
+                  <th className="py-3 px-2 sm:px-4">Hạn nộp / Ngày nộp</th>
+                  <th className="py-3 px-3 sm:px-5 text-right sm:text-left">Trạng thái</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {studentPayments.map(p => (
-                  <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-3.5 px-5 font-bold text-[#0F172A] text-xs">{p.code}</td>
-                    <td className="py-3.5 px-4 font-bold text-[#10B981] text-sm">
-                      {p.amount.toLocaleString('vi-VN')}đ
-                    </td>
-                    <td className="py-3.5 px-4 text-xs text-slate-600">{p.month}</td>
-                    <td className="py-3.5 px-4 text-xs text-slate-600">
-                      {p.paidDate ? (
-                        <span className="text-[#10B981] font-semibold">{p.paidDate}</span>
-                      ) : (
-                        <span className="text-rose-600 font-semibold">{p.dueDate}</span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-xs text-slate-600">{p.method || '—'}</td>
-                    <td className="py-3.5 px-4">
-                      <PaymentBadge status={p.status} />
-                    </td>
-                    <td className="py-3.5 px-5 text-right">
-                      {p.status !== 'Paid' ? (
-                        canConfirmPayment ? (
-                          <button
-                            onClick={() => {
-                              setConfirmingPayment(p);
-                              setConfirmMethod(p.method || 'Chuyển khoản QR');
-                              setConfirmNote('');
-                            }}
-                            className="px-3 py-1 bg-[#10B981] text-white font-bold text-xs rounded-lg hover:bg-emerald-600 active:scale-95 transition-colors cursor-pointer inline-flex items-center gap-1.5"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Xác nhận đã thu</span>
-                          </button>
-                        ) : (
-                          <span className="text-xs font-semibold text-slate-400">Chờ thu</span>
-                        )
-                      ) : (
-                        <div className="text-right">
-                          <span className="text-xs font-bold text-emerald-700 block">Đã thu</span>
-                          {p.collectorName && (
-                            <span className="text-[10px] text-slate-400 block">{p.collectorName}</span>
-                          )}
-                        </div>
-                      )}
+                {studentPayments.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-10 text-center text-xs text-slate-400">
+                      Chưa có lịch sử thu học phí nào cho học viên này.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  studentPayments.map(p => (
+                    <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3.5 px-3 sm:px-5 font-bold text-[#0F172A] text-xs sm:text-sm whitespace-nowrap">
+                        {p.month}
+                      </td>
+                      <td className="py-3.5 px-2 sm:px-4 font-extrabold text-[#10B981] text-xs sm:text-sm whitespace-nowrap">
+                        {p.amount.toLocaleString('vi-VN')}đ
+                      </td>
+                      <td className="py-3.5 px-2 sm:px-4 text-xs whitespace-nowrap">
+                        {p.paidDate ? (
+                          <div>
+                            <span className="text-emerald-700 font-bold text-xs sm:text-sm">{p.paidDate}</span>
+                            <span className="text-[10px] text-slate-400 block sm:hidden">Đã nộp</span>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="text-rose-600 font-bold text-xs sm:text-sm">{p.dueDate}</span>
+                            <span className="text-[10px] text-slate-400 block sm:hidden">Hạn nộp</span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-3 sm:px-5 text-right sm:text-left whitespace-nowrap">
+                        <PaymentBadge status={p.status} size="sm" />
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

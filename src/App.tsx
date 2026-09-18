@@ -22,7 +22,15 @@ import { ShiftsView } from './views/ShiftsView';
 import { ChatView } from './views/ChatView';
 
 const MainContent: React.FC = () => {
-  const { activeTab, selectedId, navigate, currentUser } = useApp();
+  const {
+    activeTab,
+    selectedId,
+    navigate,
+    currentUser,
+    classDetailSource,
+    setClassesFacilityId,
+    setClassesDate
+  } = useApp();
   const [isSearchOpen, setIsSearchOpen] = React.useState(false);
 
   React.useEffect(() => {
@@ -46,9 +54,16 @@ const MainContent: React.FC = () => {
             <ClassDetailView
               classId={selectedId}
               onBack={() => {
-                if (selectedId.startsWith('CLS_')) {
+                if (classDetailSource === 'schedule') {
                   navigate('schedule');
                 } else {
+                  if (selectedId.startsWith('CLS_')) {
+                    const parts = selectedId.split('_');
+                    if (parts.length >= 4) {
+                      setClassesFacilityId(parts[1]);
+                      setClassesDate(parts.slice(3).join('_'));
+                    }
+                  }
                   navigate('classes', null);
                 }
               }}

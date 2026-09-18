@@ -47,32 +47,45 @@ export const ClassesView: React.FC = () => {
     declareHoliday,
     removeHoliday,
     isHoliday,
-    sessions
+    sessions,
+    classesFacilityId,
+    setClassesFacilityId,
+    classesDate,
+    setClassesDate,
+    classesShiftId,
+    setClassesShiftId,
+    classesCoachId,
+    setClassesCoachId,
+    classesSearchQuery,
+    setClassesSearchQuery
   } = useApp();
 
-  // Date selection state (default anchor: '2026-08-28')
-  const [selectedDate, setSelectedDate] = useState<string>('2026-08-28');
+  // Date selection state (default anchor: '2026-08-28' or from context)
+  const [selectedDate, setSelectedDate] = useState<string>(() => classesDate || '2026-08-28');
 
-  // Level 1: Mặc định luôn là null để vào màn "Quản Lý Lớp Học Theo Cơ Sở"
-  const [selectedFacilityId, setSelectedFacilityId] = useState<string | null>(null);
-
-  useEffect(() => {
-    try {
-      sessionStorage.removeItem('badminton_selected_class_facility_id');
-    } catch (_) {}
-  }, []);
+  // Level 1: Mặc định null để vào màn "Quản Lý Lớp Học Theo Cơ Sở", trừ khi được phục hồi từ context
+  const [selectedFacilityId, setSelectedFacilityId] = useState<string | null>(() => classesFacilityId);
 
   const handleSelectFacility = (facilityId: string | null) => {
     setSelectedFacilityId(facilityId);
+    setClassesFacilityId(facilityId);
+    if (!facilityId) {
+      setSelectedShiftId('ALL');
+      setClassesShiftId('ALL');
+      setSelectedCoachId('ALL');
+      setClassesCoachId('ALL');
+      setSearchQuery('');
+      setClassesSearchQuery('');
+    }
   };
 
   // Search query for facilities (Level 1)
   const [facilitySearchQuery, setFacilitySearchQuery] = useState<string>('');
 
   // Filters for classes within the selected facility (Level 2)
-  const [selectedShiftId, setSelectedShiftId] = useState<string>('ALL');
-  const [selectedCoachId, setSelectedCoachId] = useState<string>('ALL');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedShiftId, setSelectedShiftId] = useState<string>(() => classesShiftId || 'ALL');
+  const [selectedCoachId, setSelectedCoachId] = useState<string>(() => classesCoachId || 'ALL');
+  const [searchQuery, setSearchQuery] = useState<string>(() => classesSearchQuery || '');
 
   // Modal State for Adding / Managing Coaches & Reminder Notes
   const [selectedClassForCoach, setSelectedClassForCoach] = useState<any | null>(null);
@@ -154,6 +167,7 @@ export const ClassesView: React.FC = () => {
   const handleQuickDate = (type: 'prev' | 'today' | 'next') => {
     if (type === 'today') {
       setSelectedDate('2026-08-28');
+      setClassesDate('2026-08-28');
       return;
     }
     const [yStr, mStr, dStr] = selectedDate.split('-');
@@ -166,7 +180,9 @@ export const ClassesView: React.FC = () => {
     const yyyy = current.getFullYear();
     const mm = String(current.getMonth() + 1).padStart(2, '0');
     const dd = String(current.getDate()).padStart(2, '0');
-    setSelectedDate(`${yyyy}-${mm}-${dd}`);
+    const newDate = `${yyyy}-${mm}-${dd}`;
+    setSelectedDate(newDate);
+    setClassesDate(newDate);
   };
 
   const getQuickDateLabel = (dateStr: string) => {
@@ -480,7 +496,12 @@ export const ClassesView: React.FC = () => {
                 <input
                   type="date"
                   value={selectedDate}
-                  onChange={e => e.target.value && setSelectedDate(e.target.value)}
+                  onChange={e => {
+                    if (e.target.value) {
+                      setSelectedDate(e.target.value);
+                      setClassesDate(e.target.value);
+                    }
+                  }}
                   className="text-xs font-bold text-[#0F172A] bg-transparent outline-none cursor-pointer"
                 />
               </div>
@@ -803,7 +824,12 @@ export const ClassesView: React.FC = () => {
                   <input
                     type="date"
                     value={selectedDate}
-                    onChange={e => e.target.value && setSelectedDate(e.target.value)}
+                    onChange={e => {
+                      if (e.target.value) {
+                        setSelectedDate(e.target.value);
+                        setClassesDate(e.target.value);
+                      }
+                    }}
                     className="text-xs font-bold text-[#0F172A] bg-transparent outline-none cursor-pointer"
                   />
                 </div>
@@ -905,7 +931,10 @@ export const ClassesView: React.FC = () => {
           <input
             type="text"
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={e => {
+              setSearchQuery(e.target.value);
+              setClassesSearchQuery(e.target.value);
+            }}
             placeholder={isCoach ? "Tìm ca học, cơ sở hoặc học viên..." : `Tìm ca học, HLV hoặc học viên tại ${activeFacility?.name || 'cơ sở'}...`}
             className="w-full pl-9 pr-4 py-2 bg-slate-50 hover:bg-slate-100/80 focus:bg-white text-sm text-[#0F172A] placeholder:text-slate-400 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] transition-all"
           />
@@ -916,7 +945,10 @@ export const ClassesView: React.FC = () => {
           {/* Shift Filter */}
           <select
             value={selectedShiftId}
-            onChange={e => setSelectedShiftId(e.target.value)}
+            onChange={e => {
+              setSelectedShiftId(e.target.value);
+              setClassesShiftId(e.target.value);
+            }}
             aria-label="Lọc theo ca"
             className="px-3 py-2 bg-slate-50 text-xs font-bold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer"
           >
@@ -932,7 +964,10 @@ export const ClassesView: React.FC = () => {
           {!isCoach && (
             <select
               value={selectedCoachId}
-              onChange={e => setSelectedCoachId(e.target.value)}
+              onChange={e => {
+                setSelectedCoachId(e.target.value);
+                setClassesCoachId(e.target.value);
+              }}
               aria-label="Lọc theo huấn luyện viên"
               className="px-3 py-2 bg-slate-50 text-xs font-bold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer"
             >
@@ -1011,7 +1046,11 @@ export const ClassesView: React.FC = () => {
                     <tr
                       key={cls.id}
                       className="hover:bg-slate-50/80 transition-colors group cursor-pointer"
-                      onClick={() => navigate('classes', cls.id)}
+                      onClick={() => {
+                        setClassesFacilityId(cls.facilityId || activeFacility?.id || null);
+                        setClassesDate(selectedDate);
+                        navigate('classes', cls.id, 'classes');
+                      }}
                     >
                       {/* Ca Học */}
                       <td className="py-4.5 px-6 whitespace-nowrap align-middle">
@@ -1169,7 +1208,11 @@ export const ClassesView: React.FC = () => {
             return (
               <div
                 key={cls.id}
-                onClick={() => navigate('classes', cls.id)}
+                onClick={() => {
+                  setClassesFacilityId(cls.facilityId || activeFacility?.id || null);
+                  setClassesDate(selectedDate);
+                  navigate('classes', cls.id, 'classes');
+                }}
                 className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-3 cursor-pointer"
               >
                 <div className="flex items-start justify-between">
