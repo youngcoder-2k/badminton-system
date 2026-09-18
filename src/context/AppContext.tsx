@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import {
   INITIAL_ADMIN_NOTIFICATIONS,
@@ -415,17 +415,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [attendanceTarget, setAttendanceTarget] = useState<{ classId?: string; date: string; sessionId?: string; facilityId?: string; shiftId?: string } | null>(null);
 
-  const showToast = (message: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
-    const id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
-    setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      removeToast(id);
-    }, 4000);
-  };
+  const toastTimeoutRef = useRef<any>(null);
 
-  const removeToast = (id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  };
+  const removeToast = useCallback((id?: string) => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+    if (!id) {
+      setToasts([]);
+    } else {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }
+  }, []);
+
+  const showToast = useCallback((message: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
+    // 1. Tắt timeout của thông báo trước đó ngay lập tức
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+
+    const id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
+
+    // 2. Luôn tắt thông báo trước đi, chỉ hiển thị duy nhất 1 thông báo mới nhất (tránh che màn hình)
+    setToasts([{ id, message, type }]);
+
+    // 3. Tự động đóng sau 3.5 giây
+    toastTimeoutRef.current = setTimeout(() => {
+      removeToast(id);
+    }, 3500);
+  }, [removeToast]);
 
   const navigate = (tab: string, id: string | null = null) => {
     setActiveTab(tab);
