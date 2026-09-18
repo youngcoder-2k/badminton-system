@@ -2096,6 +2096,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
+    const targetFacId = meta?.facilityId || currentUser.facilityId;
+    const targetDate = meta?.date || new Date().toISOString().split('T')[0];
+    const existingSession = sessions.find(
+      s => s.id === sessionId || (targetFacId && s.facilityId === targetFacId && s.date === targetDate)
+    );
+    if (existingSession?.coachAttendanceDone && currentUser.role !== 'ADMIN') {
+      showToast('Điểm danh HLV ca học này đã được xác nhận! HLV và Quản lý không thể sửa lại, chỉ Admin mới có quyền cập nhật lại.', 'warning');
+      return;
+    }
+
     const nowStr = new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
     const coachDisplayName = meta?.coachName || record.coachName || 'Huấn luyện viên';
     const enrichedRecord: CoachAttendanceRecord = {
@@ -2195,8 +2205,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const existingTargetSession = sessions.find(s => s.id === sessionId);
-    if (currentUser.role === 'FACILITY_MANAGER' && !isToday && existingTargetSession?.attendanceDone) {
-      showToast('Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không thể thêm học viên học bù cho ngày trước hoặc ngày trong tương lai!', 'error');
+    if (existingTargetSession?.attendanceDone && currentUser.role !== 'ADMIN') {
+      showToast('Điểm danh ca học này đã được xác nhận. Chỉ Admin mới có quyền thêm học viên học bù!', 'warning');
+      return;
+    }
+    if (currentUser.role === 'FACILITY_MANAGER' && !isToday) {
+      showToast('Quản lý cơ sở chỉ có thể thêm học viên học bù cho ngày hôm nay!', 'error');
       return;
     }
 
@@ -2280,6 +2294,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
+    const existingTargetSession = sessions.find(s => s.id === sessionId);
+    if (existingTargetSession?.attendanceDone && currentUser.role !== 'ADMIN') {
+      showToast('Điểm danh ca học này đã được xác nhận. Chỉ Admin mới có quyền xóa học viên học bù!', 'warning');
+      return;
+    }
+
     setSessions(prev =>
       prev.map(s => {
         const hasStudent =
@@ -2326,8 +2346,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const existingSession = sessions.find(s => s.id === sessionId || (s.classId === classId && s.date === date));
-    if (currentUser.role === 'FACILITY_MANAGER' && !isToday && existingSession?.attendanceDone) {
-      showToast('Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không thể sửa ngày trước hoặc ngày trong tương lai!', 'error');
+    if (existingSession?.attendanceDone && currentUser.role !== 'ADMIN') {
+      showToast('Điểm danh ca học này đã được xác nhận! HLV và Quản lý cơ sở không thể sửa lại, chỉ Admin mới có quyền cập nhật điểm danh.', 'warning');
+      return;
+    }
+    if (currentUser.role === 'FACILITY_MANAGER' && !isToday) {
+      showToast('Quản lý cơ sở chỉ có thể điểm danh trong ngày hôm nay!', 'error');
       return;
     }
 
@@ -2547,8 +2571,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const existingSession = sessions.find(s => s.id === sessionId || (s.classId === classId && s.date === date));
-    if (currentUser.role === 'FACILITY_MANAGER' && !isToday && existingSession?.attendanceDone) {
-      showToast('Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không thể sửa ngày trước hoặc ngày trong tương lai!', 'error');
+    if (existingSession?.attendanceDone && currentUser.role !== 'ADMIN') {
+      showToast('Điểm danh ca học này đã được xác nhận! HLV và Quản lý cơ sở không thể sửa lại, chỉ Admin mới có quyền cập nhật điểm danh.', 'warning');
+      return;
+    }
+    if (currentUser.role === 'FACILITY_MANAGER' && !isToday) {
+      showToast('Quản lý cơ sở chỉ có thể điểm danh trong ngày hôm nay!', 'error');
       return;
     }
 
