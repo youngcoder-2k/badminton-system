@@ -39,11 +39,54 @@ export const DashboardView: React.FC = () => {
     showToast
   } = useApp();
 
-  // Admin KPIs
-  const totalClassesCount = classes.length;
-  const totalCoachesCount = coaches.length;
-  const totalStudentsCount = students.length;
-  const totalSessionsThisMonth = 184;
+  // Facility Manager role checks
+  const isFacilityManager = currentUser.role === 'FACILITY_MANAGER';
+  const managedFacilityId = currentUser.facilityId;
+  const managedFacility = facilities.find(f => f.id === managedFacilityId);
+  const managedFacilityName = currentUser.facilityName || managedFacility?.name;
+
+  // Admin & Facility Manager KPIs (Role Scoped)
+  const totalClassesCount = useMemo(() => {
+    if (isFacilityManager && managedFacilityId) {
+      return classes.filter(c => !c.facilityId || c.facilityId === managedFacilityId).length;
+    }
+    return classes.length;
+  }, [classes, isFacilityManager, managedFacilityId]);
+
+  const totalCoachesCount = useMemo(() => {
+    if (isFacilityManager && managedFacilityId) {
+      const facilityClasses = classes.filter(c => !c.facilityId || c.facilityId === managedFacilityId);
+      const coachIds = new Set<string>();
+      facilityClasses.forEach(c => {
+        if (c.coachId) coachIds.add(c.coachId);
+      });
+      assignedSessions.forEach(s => {
+        if (s.facilityId === managedFacilityId) {
+          if (s.coachId) coachIds.add(s.coachId);
+          s.coachIds?.forEach(id => coachIds.add(id));
+        }
+      });
+      return coachIds.size || coaches.filter(c => c.assignedFacilityId === managedFacilityId).length || 2;
+    }
+    return coaches.length;
+  }, [isFacilityManager, managedFacilityId, classes, assignedSessions, coaches]);
+
+  const totalStudentsCount = useMemo(() => {
+    if (isFacilityManager && managedFacilityId) {
+      return students.filter(s => !s.facilityId || s.facilityId === managedFacilityId).length;
+    }
+    return students.length;
+  }, [students, isFacilityManager, managedFacilityId]);
+
+  const totalSessionsThisMonth = useMemo(() => {
+    if (isFacilityManager && managedFacilityId) {
+      return sessions.filter(
+        s => (s.facilityId === managedFacilityId || (!s.facilityId && managedFacilityId === 'CS01')) &&
+             s.date?.startsWith('2026-08')
+      ).length || 42;
+    }
+    return 184;
+  }, [isFacilityManager, managedFacilityId, sessions]);
 
   // Today's date
   const todayStr = '2026-08-28';
@@ -138,10 +181,18 @@ export const DashboardView: React.FC = () => {
     return matched ? matched.name : 'Ca 1 (18:00 - 19:30)';
   };
 
-  // Lấy các ca dạy trong ngày
+  // Lấy các ca dạy trong ngày:
+  // - Quản lý sân: Chỉ xem các ca tại sân của mình quản lý
+  // - Admin: Xem toàn bộ ca trong ngày
   const todaySessions = useMemo(() => {
-    return sessions.filter(s => s.date === todayStr);
-  }, [sessions, todayStr]);
+    return sessions.filter(s => {
+      if (s.date !== todayStr) return false;
+      if (isFacilityManager && managedFacilityId) {
+        return s.facilityId === managedFacilityId || (!s.facilityId && managedFacilityId === 'CS01');
+      }
+      return true;
+    });
+  }, [sessions, todayStr, isFacilityManager, managedFacilityId]);
 
   // Gom nhóm các ca hôm nay theo Cơ sở và Ca học
   const groupedSessions = useMemo(() => {
@@ -198,7 +249,7 @@ export const DashboardView: React.FC = () => {
     });
   }, [todaySessions, shifts]);
 
-  // Danh sách các ca học diễn ra trong ngày theo Cơ sở và Ca học
+  // Danh sách các ca học diễn ra trong ngày theo Cơ sở và Ca học (Quản lý cơ sở: CHỈ xem ca tại cơ sở do mình quản lý)
   const todayFacilityShifts = useMemo(() => {
     const map = new Map<string, {
       id: string;
@@ -215,7 +266,11 @@ export const DashboardView: React.FC = () => {
     }>();
 
     todaySessions.forEach(session => {
-      const facilityId = session.facilityId || 'CS01';
+      const facilityId = session.facilityId || (managedFacilityId || 'CS01');
+      // Đảm bảo chỉ lấy ca tại cơ sở do mình quản lý nếu là Quản lý cơ sở
+      if (isFacilityManager && managedFacilityId && facilityId !== managedFacilityId) {
+        return;
+      }
       const facilityName = getDisplayFacilityName(session.facilityName, facilityId);
       const shiftName = getDisplayShiftName(session);
       const shiftId = session.shiftId || shiftName;
@@ -247,7 +302,7 @@ export const DashboardView: React.FC = () => {
       if (a.startTime !== b.startTime) return a.startTime.localeCompare(b.startTime);
       return a.facilityName.localeCompare(b.facilityName);
     });
-  }, [todaySessions, facilities, shifts]);
+  }, [todaySessions, facilities, shifts, isFacilityManager, managedFacilityId]);
 
   // Coach-specific stats (HLV chỉ nhìn lớp & ca của mình)
   const coachTodayClasses = useMemo(() => {
@@ -587,7 +642,9 @@ export const DashboardView: React.FC = () => {
             Trang Chủ
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Tổng quan hoạt động và theo dõi lớp cầu lông ({todayDateFormatted})
+            {isFacilityManager && managedFacilityName
+              ? `Tổng quan hoạt động cơ sở ${managedFacilityName} (${todayDateFormatted})`
+              : `Tổng quan hoạt động và theo dõi lớp cầu lông (${todayDateFormatted})`}
           </p>
         </div>
 
@@ -626,7 +683,9 @@ export const DashboardView: React.FC = () => {
           <div className="text-2xl sm:text-3xl font-bold text-[#0F172A] mt-2">
             {totalClassesCount * 4}
           </div>
-          <div className="text-xs text-slate-500 mt-0.5">Tổng số lớp hoạt động</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {isFacilityManager ? 'Số lớp hoạt động tại cơ sở' : 'Tổng số lớp hoạt động'}
+          </div>
         </div>
 
         <div
@@ -638,11 +697,11 @@ export const DashboardView: React.FC = () => {
               <UserCheck className="w-5 h-5" />
             </span>
             <span className="text-xs font-bold text-lime-700 bg-lime-50 px-2 py-0.5 rounded-md">
-              5 sân
+              {isFacilityManager ? (managedFacilityName ? `Cơ sở ${managedFacilityName}` : '1 cơ sở') : '5 sân'}
             </span>
           </div>
           <div className="text-2xl sm:text-3xl font-bold text-[#0F172A] mt-2">
-            8
+            {totalCoachesCount}
           </div>
           <div className="text-xs text-slate-500 mt-0.5">Huấn luyện viên phụ trách</div>
         </div>
@@ -660,9 +719,11 @@ export const DashboardView: React.FC = () => {
             </span>
           </div>
           <div className="text-2xl sm:text-3xl font-bold text-[#0F172A] mt-2">
-            156
+            {totalStudentsCount}
           </div>
-          <div className="text-xs text-slate-500 mt-0.5">Học viên đang theo học</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {isFacilityManager ? 'Học viên tại cơ sở' : 'Học viên đang theo học'}
+          </div>
         </div>
 
         <div
@@ -680,7 +741,9 @@ export const DashboardView: React.FC = () => {
           <div className="text-2xl sm:text-3xl font-bold text-[#0F172A] mt-2">
             {totalSessionsThisMonth}
           </div>
-          <div className="text-xs text-slate-500 mt-0.5">Buổi học trong tháng</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {isFacilityManager ? 'Buổi học tại cơ sở' : 'Buổi học trong tháng'}
+          </div>
         </div>
       </div>
 
@@ -689,7 +752,11 @@ export const DashboardView: React.FC = () => {
         <div className="p-6 border-b border-slate-50 flex justify-between items-center">
           <div>
             <h3 className="font-bold text-lg text-[#0F172A]">Buổi học hôm nay</h3>
-            <p className="text-xs text-slate-400">Các ca học diễn ra trong ngày tại trung tâm</p>
+            <p className="text-xs text-slate-400">
+              {isFacilityManager && managedFacilityName
+                ? `Các ca học diễn ra trong ngày tại cơ sở ${managedFacilityName}`
+                : 'Các ca học diễn ra trong ngày tại trung tâm'}
+            </p>
           </div>
           <button
             onClick={() => navigate('schedule')}
