@@ -141,29 +141,29 @@ export const CoachRegisteredShiftsPanel: React.FC<CoachRegisteredShiftsPanelProp
   }, [activeCoachShifts, shiftFilter, shiftSearch]);
 
   return (
-    <div className={`space-y-4 ${isFullPage ? 'bg-white p-5 sm:p-7 rounded-3xl border border-slate-200/90 shadow-xs' : 'max-h-[80vh] overflow-y-auto pr-1'}`}>
+    <div className={`space-y-4 ${isFullPage ? 'bg-white p-3.5 sm:p-6 lg:p-7 rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs' : 'max-h-[80vh] overflow-y-auto pr-1'}`}>
       {/* 1. HLV Overview Strip */}
-      <div className="p-4 sm:p-5 bg-slate-900 text-white rounded-2xl sm:rounded-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-md">
-        <div className="flex items-center gap-3.5">
+      <div className="p-3.5 sm:p-5 bg-slate-900 text-white rounded-xl sm:rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 shadow-md">
+        <div className="flex items-center gap-3">
           <img
             src={coach.avatar}
             alt={coach.name}
-            className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl object-cover border-2 border-emerald-400 shadow-xs shrink-0"
+            className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl object-cover border-2 border-emerald-400 shadow-xs shrink-0"
           />
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h4 className="font-extrabold text-base sm:text-lg">{coach.name}</h4>
-              <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-full border border-emerald-500/30">
+              <h4 className="font-extrabold text-sm sm:text-lg text-white truncate">{coach.name}</h4>
+              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-full border border-emerald-500/30">
                 {coach.specialty || 'Huấn luyện viên'}
               </span>
             </div>
             <p className="text-xs text-slate-300 flex items-center gap-2 mt-1 flex-wrap">
               <span className="inline-flex items-center gap-1">
-                <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                <Phone className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 <span>{coach.phone}</span>
               </span>
-              <span className="text-slate-600">•</span>
-              <span>Kỳ giảng dạy: <strong className="text-white">Tháng 08/2026</strong></span>
+              <span className="text-slate-600 hidden sm:inline">•</span>
+              <span className="text-[11px] sm:text-xs">Kỳ giảng dạy: <strong className="text-white">Tháng 08/2026</strong></span>
             </p>
           </div>
         </div>
@@ -171,7 +171,7 @@ export const CoachRegisteredShiftsPanel: React.FC<CoachRegisteredShiftsPanelProp
         {isFullPage && onNavigate && (
           <button
             onClick={() => onNavigate('schedule', 'register-coach-session')}
-            className="self-start sm:self-auto inline-flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer shrink-0"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 active:scale-[0.98] text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer shrink-0"
           >
             <CalendarPlus className="w-4 h-4" />
             <span>Đăng ký ca mới</span>
@@ -180,33 +180,33 @@ export const CoachRegisteredShiftsPanel: React.FC<CoachRegisteredShiftsPanelProp
       </div>
 
       {/* 2. KPI: Ca Dạy Đã Đăng Ký (Chỉ tính ca đã được QL/Admin xác nhận) */}
-      <div className="p-4 sm:p-5 bg-emerald-50/90 rounded-2xl sm:rounded-3xl border border-emerald-200 flex items-center justify-between shadow-2xs">
-        <div className="flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
+      <div className="p-3.5 sm:p-5 bg-gradient-to-br from-emerald-50/90 via-teal-50/50 to-slate-50 rounded-xl sm:rounded-2xl border border-emerald-200/90 flex items-center justify-between gap-3 shadow-2xs">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
             <Calendar className="w-5 h-5" />
           </div>
-          <div>
-            <span className="text-xs font-black uppercase tracking-wider text-emerald-800">
+          <div className="min-w-0">
+            <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-emerald-900 block truncate">
               CA DẠY ĐÃ ĐĂNG KÝ (THÁNG 08/2026)
             </span>
-            <p className="text-xs text-emerald-700 mt-0.5">
+            <p className="text-[11px] sm:text-xs text-emerald-700 mt-0.5 line-clamp-2 sm:line-clamp-none">
               Chỉ hiển thị những ngày HLV đã đăng ký và được Quản lý cơ sở / Admin xác nhận
             </p>
           </div>
         </div>
-        <div className="flex items-baseline gap-1.5 bg-white px-4 py-2.5 rounded-2xl border border-emerald-200 shadow-xs shrink-0">
-          <strong className="text-2xl sm:text-3xl font-black text-emerald-700">{activeCoachShifts.length}</strong>
+        <div className="flex items-baseline gap-1 bg-white px-3 sm:px-4 py-1.5 sm:py-2.5 rounded-xl sm:rounded-2xl border border-emerald-200 shadow-xs shrink-0">
+          <strong className="text-xl sm:text-3xl font-black text-emerald-700">{activeCoachShifts.length}</strong>
           <span className="text-xs font-extrabold text-emerald-600">ca</span>
         </div>
       </div>
 
-      {/* 3. Bộ lọc phân loại lấy các ca từ Quản Lý Ca Học & Lịch Ca */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-        <div className="flex flex-wrap items-center gap-1.5">
+      {/* 3. Bộ lọc phân loại & Tìm kiếm: Thanh cuộn ngang mượt mà trên điện thoại */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 -mx-1 px-1 whitespace-nowrap no-scrollbar">
           <button
             type="button"
             onClick={() => setShiftFilter('ALL')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-colors cursor-pointer ${
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-colors cursor-pointer shrink-0 ${
               shiftFilter === 'ALL'
                 ? 'bg-slate-900 text-white shadow-xs'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -221,7 +221,7 @@ export const CoachRegisteredShiftsPanel: React.FC<CoachRegisteredShiftsPanelProp
                 key={s.id}
                 type="button"
                 onClick={() => setShiftFilter(s.name)}
-                className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-colors cursor-pointer ${
+                className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-colors cursor-pointer shrink-0 ${
                   shiftFilter === s.name
                     ? 'bg-emerald-600 text-white shadow-xs'
                     : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
@@ -245,67 +245,86 @@ export const CoachRegisteredShiftsPanel: React.FC<CoachRegisteredShiftsPanelProp
         </div>
       </div>
 
-      {/* 4. Bảng Chi Tiết Ca Dạy - Responsive: Dạng thẻ trên mobile, bảng chi tiết trên desktop */}
+      {/* 4. Danh Sách Ca Dạy - Tối Ưu UI/UX: Dạng Thẻ Danh Thiếp Rõ Ràng Trên Mobile & Bảng Chi Tiết Trên Desktop */}
       <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs bg-white">
         {filteredActiveShifts.length === 0 ? (
-          <div className="py-10 text-center text-slate-400 text-xs px-4">
-            Chưa có ca dạy nào được Quản lý cơ sở / Admin xác nhận điểm danh
+          <div className="py-12 px-4 text-center text-slate-400 text-xs">
+            <div className="w-10 h-10 mx-auto mb-2 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <span>Chưa có ca dạy nào được Quản lý cơ sở / Admin xác nhận điểm danh</span>
           </div>
         ) : (
           <>
-            {/* Mobile Cards View */}
-            <div className="block md:hidden divide-y divide-slate-100">
-              {filteredActiveShifts.map(shift => (
-                <div key={shift.id} className="p-3.5 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-bold text-[#0F172A] text-sm block">
-                        {formatDateDMY(shift.date)}
+            {/* Mobile Cards View: Thẻ danh thiếp bo góc sắc nét, không bị co ép chữ hay tràn màn hình */}
+            <div className="block lg:hidden divide-y divide-slate-100">
+              {filteredActiveShifts.map((shift, idx) => (
+                <div key={shift.id} className="p-3.5 sm:p-4 space-y-2.5 hover:bg-slate-50/60 transition-colors">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 font-extrabold text-xs flex items-center justify-center shrink-0">
+                        {idx + 1}
                       </span>
-                      <span className="text-[11px] text-slate-400 font-medium">
-                        {shift.dayOfWeek}
-                      </span>
+                      <div className="min-w-0">
+                        <div className="font-extrabold text-[#0F172A] text-sm flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>{formatDateDMY(shift.date)}</span>
+                        </div>
+                        <span className="text-[11px] text-slate-400 font-medium block mt-0.5">
+                          {shift.dayOfWeek} {shift.timeSlot ? `• ${shift.timeSlot}` : ''}
+                        </span>
+                      </div>
                     </div>
-                    <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${getShiftBadgeClass(shift.shiftName)}`}>
+
+                    <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border shrink-0 ${getShiftBadgeClass(shift.shiftName)}`}>
                       {shift.shiftName}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between text-xs pt-0.5">
-                    <span className="font-semibold text-slate-700 truncate max-w-[180px]">
-                      {shift.facilityName}
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
+                    <span className="font-semibold text-slate-600 truncate flex items-center gap-1 max-w-[170px]">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">{shift.facilityName || 'Tại sân'}</span>
                     </span>
-                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
-                      shift.coachAttendance?.status === 'Late'
-                        ? 'text-amber-700 bg-amber-50 border-amber-200'
-                        : shift.coachAttendance?.status === 'Absent'
-                        ? 'text-rose-700 bg-rose-50 border-rose-200'
-                        : 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                    }`}>
-                      <CheckCircle2 className="w-3 h-3" />
-                      {shift.coachAttendance?.status === 'Late'
-                        ? 'Đi muộn'
-                        : shift.coachAttendance?.status === 'Absent'
-                        ? 'Vắng'
-                        : 'Có mặt'}
-                    </span>
+
+                    <div className="flex flex-col items-end gap-0.5 shrink-0">
+                      <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                        shift.coachAttendance?.status === 'Late'
+                          ? 'text-amber-700 bg-amber-50 border-amber-200'
+                          : shift.coachAttendance?.status === 'Absent'
+                          ? 'text-rose-700 bg-rose-50 border-rose-200'
+                          : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                      }`}>
+                        <CheckCircle2 className="w-3 h-3" />
+                        {shift.coachAttendance?.status === 'Late'
+                          ? 'Đã duyệt (Đi muộn)'
+                          : shift.coachAttendance?.status === 'Absent'
+                          ? 'Đã duyệt (Vắng)'
+                          : 'Đã xác nhận (Có mặt)'}
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-medium">
+                        {shift.coachAttendance?.checkedByRole === 'ADMIN' ? 'Admin' : 'QL cơ sở'} đã xác nhận
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
-              <div className="p-3 bg-slate-50 text-xs font-bold text-slate-600 border-t border-slate-100">
-                Tổng số: <strong className="text-emerald-700 font-extrabold">{filteredActiveShifts.length}</strong> ca đã xác nhận
+              <div className="p-3 bg-slate-50 text-xs font-bold text-slate-600 border-t border-slate-100 flex items-center justify-between">
+                <span>Tổng số:</span>
+                <span className="text-emerald-700 font-extrabold">{filteredActiveShifts.length} ca đã xác nhận</span>
               </div>
             </div>
 
-            {/* Desktop Table View */}
-            <div className="hidden md:block overflow-x-auto">
+            {/* Desktop Table View: Bảng đầy đủ độ rộng, không bị cắt chữ */}
+            <div className="hidden lg:block overflow-x-auto">
               <table className="w-full text-left text-xs text-slate-700">
                 <thead className="bg-slate-100/80 text-[11px] font-extrabold text-slate-600 uppercase border-b border-slate-200">
                   <tr>
                     <th className="py-3 px-3 w-12 text-center">#</th>
-                    <th className="py-3 px-4">Ngày dạy</th>
-                    <th className="py-3 px-4">Cơ Sở</th>
-                    <th className="py-3 px-4">Ca</th>
-                    <th className="py-3 px-3.5 text-center">Trạng thái</th>
+                    <th className="py-3 px-4 min-w-[130px]">Ngày dạy</th>
+                    <th className="py-3 px-4 min-w-[150px]">Cơ Sở</th>
+                    <th className="py-3 px-4 min-w-[90px]">Ca</th>
+                    <th className="py-3 px-4 min-w-[190px] text-center">Trạng thái</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -330,9 +349,9 @@ export const CoachRegisteredShiftsPanel: React.FC<CoachRegisteredShiftsPanelProp
                           {shift.shiftName}
                         </span>
                       </td>
-                      <td className="py-3 px-3.5 text-center">
+                      <td className="py-3 px-4 text-center">
                         <div className="inline-flex flex-col items-center gap-0.5">
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full border whitespace-nowrap ${
                             shift.coachAttendance?.status === 'Late'
                               ? 'text-amber-700 bg-amber-50 border-amber-200'
                               : shift.coachAttendance?.status === 'Absent'
@@ -346,7 +365,7 @@ export const CoachRegisteredShiftsPanel: React.FC<CoachRegisteredShiftsPanelProp
                               ? 'Đã duyệt (Vắng)'
                               : 'Đã xác nhận (Có mặt)'}
                           </span>
-                          <span className="text-[9px] text-slate-400 font-medium">
+                          <span className="text-[9px] text-slate-400 font-medium whitespace-nowrap">
                             {shift.coachAttendance?.checkedByRole === 'ADMIN' ? 'Admin' : 'QL cơ sở'} đã xác nhận
                           </span>
                         </div>
@@ -468,7 +487,7 @@ export const CoachesView: React.FC = () => {
 
           <button
             onClick={() => navigate('schedule', 'register-coach-session')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#10B981] hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer self-start sm:self-auto"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-[#10B981] hover:bg-emerald-600 active:scale-[0.98] text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer w-full sm:w-auto"
           >
             <CalendarPlus className="w-4 h-4" />
             <span>+ Đăng Ký Ca Dạy Mới</span>
