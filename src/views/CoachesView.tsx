@@ -245,82 +245,126 @@ export const CoachRegisteredShiftsPanel: React.FC<CoachRegisteredShiftsPanelProp
         </div>
       </div>
 
-      {/* 4. Bảng Chi Tiết Ca Dạy - Tinh gọn 5 cột: #, Ngày dạy, Cơ sở, Phân loại, Trạng thái */}
-      <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-700">
-            <thead className="bg-slate-100/80 text-[11px] font-extrabold text-slate-600 uppercase border-b border-slate-200">
-              <tr>
-                <th className="py-3 px-3 w-12 text-center">#</th>
-                <th className="py-3 px-4">Ngày dạy</th>
-                <th className="py-3 px-4">Cơ Sở</th>
-                <th className="py-3 px-4">Ca</th>
-                <th className="py-3 px-3.5 text-center">Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {filteredActiveShifts.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="py-10 text-center text-slate-400 text-xs">
-                    Chưa có ca dạy nào được Quản lý cơ sở / Admin xác nhận điểm danh
-                  </td>
-                </tr>
-              ) : (
-                filteredActiveShifts.map((shift, idx) => (
-                  <tr key={shift.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3 px-3 text-center font-bold text-slate-400">
-                      {idx + 1}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="font-bold text-[#0F172A] block text-sm">
+      {/* 4. Bảng Chi Tiết Ca Dạy - Responsive: Dạng thẻ trên mobile, bảng chi tiết trên desktop */}
+      <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs bg-white">
+        {filteredActiveShifts.length === 0 ? (
+          <div className="py-10 text-center text-slate-400 text-xs px-4">
+            Chưa có ca dạy nào được Quản lý cơ sở / Admin xác nhận điểm danh
+          </div>
+        ) : (
+          <>
+            {/* Mobile Cards View */}
+            <div className="block md:hidden divide-y divide-slate-100">
+              {filteredActiveShifts.map(shift => (
+                <div key={shift.id} className="p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-[#0F172A] text-sm block">
                         {formatDateDMY(shift.date)}
                       </span>
                       <span className="text-[11px] text-slate-400 font-medium">
                         {shift.dayOfWeek}
                       </span>
-                    </td>
-                    <td className="py-3 px-4 font-semibold text-slate-800">
+                    </div>
+                    <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${getShiftBadgeClass(shift.shiftName)}`}>
+                      {shift.shiftName}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs pt-0.5">
+                    <span className="font-semibold text-slate-700 truncate max-w-[180px]">
                       {shift.facilityName}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border whitespace-nowrap ${getShiftBadgeClass(shift.shiftName)}`}>
-                        {shift.shiftName}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3.5 text-center">
-                      <div className="inline-flex flex-col items-center gap-0.5">
-                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
-                          shift.coachAttendance?.status === 'Late'
-                            ? 'text-amber-700 bg-amber-50 border-amber-200'
-                            : shift.coachAttendance?.status === 'Absent'
-                            ? 'text-rose-700 bg-rose-50 border-rose-200'
-                            : 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                        }`}>
-                          <CheckCircle2 className="w-3 h-3" />
-                          {shift.coachAttendance?.status === 'Late'
-                            ? 'Đã duyệt (Đi muộn)'
-                            : shift.coachAttendance?.status === 'Absent'
-                            ? 'Đã duyệt (Vắng)'
-                            : 'Đã xác nhận (Có mặt)'}
+                    </span>
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
+                      shift.coachAttendance?.status === 'Late'
+                        ? 'text-amber-700 bg-amber-50 border-amber-200'
+                        : shift.coachAttendance?.status === 'Absent'
+                        ? 'text-rose-700 bg-rose-50 border-rose-200'
+                        : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                    }`}>
+                      <CheckCircle2 className="w-3 h-3" />
+                      {shift.coachAttendance?.status === 'Late'
+                        ? 'Đi muộn'
+                        : shift.coachAttendance?.status === 'Absent'
+                        ? 'Vắng'
+                        : 'Có mặt'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              <div className="p-3 bg-slate-50 text-xs font-bold text-slate-600 border-t border-slate-100">
+                Tổng số: <strong className="text-emerald-700 font-extrabold">{filteredActiveShifts.length}</strong> ca đã xác nhận
+              </div>
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-700">
+                <thead className="bg-slate-100/80 text-[11px] font-extrabold text-slate-600 uppercase border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-3 w-12 text-center">#</th>
+                    <th className="py-3 px-4">Ngày dạy</th>
+                    <th className="py-3 px-4">Cơ Sở</th>
+                    <th className="py-3 px-4">Ca</th>
+                    <th className="py-3 px-3.5 text-center">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {filteredActiveShifts.map((shift, idx) => (
+                    <tr key={shift.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-3 px-3 text-center font-bold text-slate-400">
+                        {idx + 1}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="font-bold text-[#0F172A] block text-sm">
+                          {formatDateDMY(shift.date)}
                         </span>
-                        <span className="text-[9px] text-slate-400 font-medium">
-                          {shift.coachAttendance?.checkedByRole === 'ADMIN' ? 'Admin' : 'QL cơ sở'} đã xác nhận
+                        <span className="text-[11px] text-slate-400 font-medium">
+                          {shift.dayOfWeek}
                         </span>
-                      </div>
+                      </td>
+                      <td className="py-3 px-4 font-semibold text-slate-800">
+                        {shift.facilityName}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border whitespace-nowrap ${getShiftBadgeClass(shift.shiftName)}`}>
+                          {shift.shiftName}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3.5 text-center">
+                        <div className="inline-flex flex-col items-center gap-0.5">
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                            shift.coachAttendance?.status === 'Late'
+                              ? 'text-amber-700 bg-amber-50 border-amber-200'
+                              : shift.coachAttendance?.status === 'Absent'
+                              ? 'text-rose-700 bg-rose-50 border-rose-200'
+                              : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                          }`}>
+                            <CheckCircle2 className="w-3 h-3" />
+                            {shift.coachAttendance?.status === 'Late'
+                              ? 'Đã duyệt (Đi muộn)'
+                              : shift.coachAttendance?.status === 'Absent'
+                              ? 'Đã duyệt (Vắng)'
+                              : 'Đã xác nhận (Có mặt)'}
+                          </span>
+                          <span className="text-[9px] text-slate-400 font-medium">
+                            {shift.coachAttendance?.checkedByRole === 'ADMIN' ? 'Admin' : 'QL cơ sở'} đã xác nhận
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-50/90 font-bold text-slate-700 border-t border-slate-200">
+                  <tr>
+                    <td colSpan={5} className="py-3 px-4 text-slate-600 text-xs">
+                      Tổng số: <strong className="text-emerald-700 font-extrabold">{filteredActiveShifts.length}</strong> ca đã xác nhận
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-            <tfoot className="bg-slate-50/90 font-bold text-slate-700 border-t border-slate-200">
-              <tr>
-                <td colSpan={5} className="py-3 px-4 text-slate-600 text-xs">
-                  Tổng số: <strong className="text-emerald-700 font-extrabold">{filteredActiveShifts.length}</strong> ca đã xác nhận
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+                </tfoot>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Note / Footer */}

@@ -672,23 +672,23 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
                     <BookOpen className="w-4 h-4 text-emerald-600" />
                     <span>Số buổi tập:</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2.5 text-center">
-                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 shadow-2xs">
-                      <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">Tổng số buổi học</div>
-                      <div className="text-xl font-black text-[#0F172A] mt-0.5">
-                        {currentStudent.packageSessions} <span className="text-xs font-semibold text-slate-400">buổi</span>
+                  <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5 text-center">
+                    <div className="p-2 sm:p-3 bg-slate-50 rounded-xl sm:rounded-2xl border border-slate-100 shadow-2xs">
+                      <div className="text-[9px] sm:text-[10px] text-slate-500 font-bold uppercase tracking-tight sm:tracking-wide truncate">Tổng số buổi</div>
+                      <div className="text-base sm:text-xl font-black text-[#0F172A] mt-0.5">
+                        {currentStudent.packageSessions} <span className="text-[10px] sm:text-xs font-semibold text-slate-400">buổi</span>
                       </div>
                     </div>
-                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 shadow-2xs">
-                      <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">Đã tập</div>
-                      <div className="text-xl font-black text-sky-700 mt-0.5">
-                        {currentStudent.attendedSessions} <span className="text-xs font-semibold text-slate-400">buổi</span>
+                    <div className="p-2 sm:p-3 bg-slate-50 rounded-xl sm:rounded-2xl border border-slate-100 shadow-2xs">
+                      <div className="text-[9px] sm:text-[10px] text-slate-500 font-bold uppercase tracking-tight sm:tracking-wide truncate">Đã tập</div>
+                      <div className="text-base sm:text-xl font-black text-sky-700 mt-0.5">
+                        {currentStudent.attendedSessions} <span className="text-[10px] sm:text-xs font-semibold text-slate-400">buổi</span>
                       </div>
                     </div>
-                    <div className="p-3 bg-emerald-50/80 rounded-2xl border border-emerald-200 shadow-2xs">
-                      <div className="text-[10px] text-emerald-800 font-bold uppercase tracking-wide">Còn lại</div>
-                      <div className="text-xl font-black text-emerald-600 mt-0.5">
-                        {currentStudent.remainingSessions} <span className="text-xs font-semibold text-emerald-700">buổi</span>
+                    <div className="p-2 sm:p-3 bg-emerald-50/80 rounded-xl sm:rounded-2xl border border-emerald-200 shadow-2xs">
+                      <div className="text-[9px] sm:text-[10px] text-emerald-800 font-bold uppercase tracking-tight sm:tracking-wide truncate">Còn lại</div>
+                      <div className="text-base sm:text-xl font-black text-emerald-600 mt-0.5">
+                        {currentStudent.remainingSessions} <span className="text-[10px] sm:text-xs font-semibold text-emerald-700">buổi</span>
                       </div>
                     </div>
                   </div>
@@ -793,51 +793,96 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
 
       {/* Tab 2: Attendance History */}
       {activeTab === 'attendance' && (
-        <div className="bg-white rounded-3xl border border-slate-100 shadow-xs overflow-hidden">
+        <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-100 shadow-xs overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="font-bold text-base text-[#0F172A]">Lịch Sử Điểm Danh Tham Gia</h3>
+            <h3 className="font-bold text-sm sm:text-base text-[#0F172A]">Lịch Sử Điểm Danh Tham Gia</h3>
+            <span className="text-xs text-slate-500 font-medium">
+              {currentStudent.attendanceHistory?.length || 0} buổi
+            </span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  <th className="py-3.5 px-5">Ngày học</th>
-                  <th className="py-3.5 px-4">Lớp</th>
-                  <th className="py-3.5 px-4">Khung giờ</th>
-                  <th className="py-3.5 px-4">Sân tập</th>
-                  <th className="py-3.5 px-4">HLV phụ trách</th>
-                  <th className="py-3.5 px-4">Trạng thái điểm danh</th>
-                  <th className="py-3.5 px-5">Ghi chú</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {currentStudent.attendanceHistory && currentStudent.attendanceHistory.length > 0 ? (
-                  currentStudent.attendanceHistory.map(att => (
-                    <tr key={att.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-3.5 px-5 font-bold text-[#0F172A] text-xs">{att.date}</td>
-                      <td className="py-3.5 px-4 font-semibold text-slate-800 text-xs">
-                        {currentStudent.className}
-                      </td>
-                      <td className="py-3.5 px-4 text-xs text-slate-600">18:00 - 19:30</td>
-                      <td className="py-3.5 px-4 text-xs text-slate-600">Sân 02</td>
-                      <td className="py-3.5 px-4 text-xs text-slate-600">{currentStudent.coachName}</td>
-                      <td className="py-3.5 px-4">
-                        <AttendanceStatusBadge status={att.status} />
-                      </td>
-                      <td className="py-3.5 px-5 text-xs text-slate-500">{att.note || '—'}</td>
+          {!currentStudent.attendanceHistory || currentStudent.attendanceHistory.length === 0 ? (
+            <div className="py-12 px-4 text-center">
+              <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
+                <CalendarCheck className="w-6 h-6" />
+              </div>
+              <p className="text-sm font-bold text-slate-700">Chưa có dữ liệu điểm danh</p>
+              <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                Dữ liệu điểm danh của học viên này sẽ tự động cập nhật sau mỗi ca học tại sân.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Mobile View: Hiển thị dạng thẻ gọn gàng, trực quan, không bị tràn màn hình */}
+              <div className="block md:hidden divide-y divide-slate-100">
+                {currentStudent.attendanceHistory.map(att => (
+                  <div key={att.id} className="p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-[#0F172A]">{att.date}</span>
+                      <AttendanceStatusBadge status={att.status} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-slate-400 text-[10px] block uppercase font-bold">Lớp học</span>
+                        <span className="font-semibold text-slate-800 truncate block">{currentStudent.className}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] block uppercase font-bold">Khung giờ</span>
+                        <span className="font-medium text-slate-700 block">18:00 - 19:30</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] block uppercase font-bold">Sân tập</span>
+                        <span className="font-medium text-slate-700 block">Sân 02</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] block uppercase font-bold">HLV phụ trách</span>
+                        <span className="font-medium text-slate-700 block">{currentStudent.coachName}</span>
+                      </div>
+                    </div>
+                    {att.note && (
+                      <div className="text-[11px] text-slate-500 bg-slate-50 p-2 rounded-xl border border-slate-100">
+                        {att.note}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop View: Bảng chi tiết đầy đủ */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                      <th className="py-3.5 px-5">Ngày học</th>
+                      <th className="py-3.5 px-4">Lớp</th>
+                      <th className="py-3.5 px-4">Khung giờ</th>
+                      <th className="py-3.5 px-4">Sân tập</th>
+                      <th className="py-3.5 px-4">HLV phụ trách</th>
+                      <th className="py-3.5 px-4">Trạng thái điểm danh</th>
+                      <th className="py-3.5 px-5">Ghi chú</th>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={7} className="py-10 text-center text-slate-400">
-                      Chưa có dữ liệu điểm danh cho học viên này.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {currentStudent.attendanceHistory.map(att => (
+                      <tr key={att.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-3.5 px-5 font-bold text-[#0F172A] text-xs">{att.date}</td>
+                        <td className="py-3.5 px-4 font-semibold text-slate-800 text-xs">
+                          {currentStudent.className}
+                        </td>
+                        <td className="py-3.5 px-4 text-xs text-slate-600">18:00 - 19:30</td>
+                        <td className="py-3.5 px-4 text-xs text-slate-600">Sân 02</td>
+                        <td className="py-3.5 px-4 text-xs text-slate-600">{currentStudent.coachName}</td>
+                        <td className="py-3.5 px-4">
+                          <AttendanceStatusBadge status={att.status} />
+                        </td>
+                        <td className="py-3.5 px-5 text-xs text-slate-500">{att.note || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       )}
 
