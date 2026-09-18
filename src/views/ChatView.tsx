@@ -28,7 +28,7 @@ export const ChatView: React.FC = () => {
 
   const [inputContent, setInputContent] = useState('');
   const [isNotice, setIsNotice] = useState(false);
-  const [filterType, setFilterType] = useState<'all' | 'notices'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'notices' | 'mentions'>('all');
 
   // Mention autocomplete state
   const [isMentionOpen, setIsMentionOpen] = useState(false);
@@ -253,13 +253,50 @@ export const ChatView: React.FC = () => {
     }
   };
 
-  // Lọc tin nhắn theo tab đã chọn (Tất cả hoặc Yêu cầu xác nhận)
+  // Đếm số thông báo toàn hệ thống
+  const noticesCount = useMemo(() => {
+    return chatMessages.filter(m => m.isNotice).length;
+  }, [chatMessages]);
+
+  // Đếm số tin nhắn có nhắc tên người dùng hiện tại
+  const myMentionsCount = useMemo(() => {
+    if (!currentUser?.name) return 0;
+    const myName = currentUser.name.toLowerCase();
+    return chatMessages.filter(m => {
+      const content = (m.content || '').toLowerCase();
+      return (
+        content.includes(`@${myName}`) ||
+        content.includes('@tất cả') ||
+        content.includes('@mọi người') ||
+        (currentUser.role === 'ADMIN' && content.includes('@admin')) ||
+        (currentUser.role === 'FACILITY_MANAGER' && (content.includes('@quản lý') || content.includes('@ql'))) ||
+        (currentUser.role === 'COACH' && (content.includes('@hlv') || content.includes('@huấn luyện viên')))
+      );
+    }).length;
+  }, [chatMessages, currentUser]);
+
+  // Lọc tin nhắn theo tab đã chọn (Tất cả, Thông báo, Nhắc tên)
   const filteredMessages = useMemo(() => {
     if (filterType === 'notices') {
       return chatMessages.filter(m => m.isNotice);
     }
+    if (filterType === 'mentions') {
+      if (!currentUser?.name) return [];
+      const myName = currentUser.name.toLowerCase();
+      return chatMessages.filter(m => {
+        const content = (m.content || '').toLowerCase();
+        return (
+          content.includes(`@${myName}`) ||
+          content.includes('@tất cả') ||
+          content.includes('@mọi người') ||
+          (currentUser.role === 'ADMIN' && content.includes('@admin')) ||
+          (currentUser.role === 'FACILITY_MANAGER' && (content.includes('@quản lý') || content.includes('@ql'))) ||
+          (currentUser.role === 'COACH' && (content.includes('@hlv') || content.includes('@huấn luyện viên')))
+        );
+      });
+    }
     return chatMessages;
-  }, [chatMessages, filterType]);
+  }, [chatMessages, filterType, currentUser]);
 
   // Huy hiệu hiển thị vai trò người dùng (Admin, Quản lý sân, HLV)
   const getRoleBadge = (role?: UserRole | 'ALL' | string) => {

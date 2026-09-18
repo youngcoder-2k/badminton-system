@@ -850,7 +850,7 @@ export const AttendanceView: React.FC = () => {
       showToast('Huấn luyện viên không có quyền thêm học viên học bù!', 'error');
       return;
     }
-    if (isFacilityManagerLocked && isSelectedDatePast) {
+    if (isFacilityManagerLocked) {
       showToast('Điểm danh ca học này đã được xác nhận. Quản lý cơ sở không có quyền thêm học viên học bù cho ngày trước!', 'warning');
       return;
     }
@@ -1739,7 +1739,7 @@ export const AttendanceView: React.FC = () => {
                         </span>
                       </div>
                       <div className="text-[10px] text-slate-400 flex items-center gap-1.5 truncate">
-                        {makeup.note ? <span>{makeup.note}</span> : <span>Từ: {makeup.fromClassName || 'Lớp khác'}</span>}
+                        {makeup.note ? <span>{makeup.note}</span> : <span>Từ: {makeup.makeupFromClass || 'Lớp khác'}</span>}
                       </div>
                     </div>
                   </div>

@@ -9,7 +9,8 @@ import {
   CheckCircle2,
   Clock,
   XCircle,
-  CalendarPlus
+  CalendarPlus,
+  MapPin
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Modal } from '../components/common/Modal';
