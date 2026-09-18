@@ -973,30 +973,27 @@ export const AttendanceView: React.FC = () => {
       </div>
 
       {/* View Mode Switcher */}
-      <div className="flex items-center gap-2 p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200/80 w-fit">
+      <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200/80 w-fit max-w-full overflow-x-auto no-scrollbar">
         <button
           onClick={() => setViewTab('session')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+          className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
             viewTab === 'session'
               ? 'bg-white text-[#0F172A] shadow-xs'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span>📋 Điểm Danh Ca Học</span>
+          <span className="whitespace-nowrap">📋 Điểm Danh Ca Học</span>
         </button>
         <button
           onClick={() => setViewTab('monthly')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+          className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
             viewTab === 'monthly'
               ? 'bg-[#10B981] text-white shadow-xs'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <Calendar className="w-3.5 h-3.5" />
-          <span>Ma Trận Tháng (31 Ngày)</span>
-          <span className="ml-1 text-[10px] font-black px-1.5 py-0.5 rounded-full bg-white/20 text-white">
-            Excel
-          </span>
+          <Calendar className="w-3.5 h-3.5 shrink-0" />
+          <span className="whitespace-nowrap">Ma Trận Tháng (31 Ngày)</span>
         </button>
       </div>
 
@@ -1164,23 +1161,23 @@ export const AttendanceView: React.FC = () => {
         </div>
 
         {/* Live Attendance Stats Counter */}
-        <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+        <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto no-scrollbar py-0.5">
+            <span className="text-[11px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0 whitespace-nowrap">
               Thống kê ca:
             </span>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-nowrap shrink-0">
+              <span className="px-2.5 sm:px-3 py-1 bg-emerald-100 text-emerald-800 text-[11px] sm:text-xs font-bold rounded-full whitespace-nowrap shrink-0">
                 Có mặt: {presentCount} / {classStudents.length + sessionMakeupStudents.length}
               </span>
-              <span className="px-3 py-1 bg-amber-100 text-amber-900 text-xs font-bold rounded-full">
+              <span className="px-2.5 sm:px-3 py-1 bg-amber-100 text-amber-900 text-[11px] sm:text-xs font-bold rounded-full whitespace-nowrap shrink-0">
                 Có phép: {excusedCount}
               </span>
-              <span className="px-3 py-1 bg-rose-100 text-rose-800 text-xs font-bold rounded-full">
+              <span className="px-2.5 sm:px-3 py-1 bg-rose-100 text-rose-800 text-[11px] sm:text-xs font-bold rounded-full whitespace-nowrap shrink-0">
                 Vắng: {absentCount}
               </span>
               {sessionMakeupStudents.length > 0 && (
-                <span className="px-3 py-1 bg-sky-100 text-sky-800 text-xs font-bold rounded-full">
+                <span className="px-2.5 sm:px-3 py-1 bg-sky-100 text-sky-800 text-[11px] sm:text-xs font-bold rounded-full whitespace-nowrap shrink-0">
                   Học bù: +{sessionMakeupStudents.length}
                 </span>
               )}
@@ -1189,16 +1186,16 @@ export const AttendanceView: React.FC = () => {
 
           {/* Quick Mark All Buttons for Students */}
           {!isAttendedLocked && (isSelectedDateToday || isAdmin) && !isSelectedDateFuture && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 onClick={() => handleMarkAll('Present')}
-                className="text-xs font-bold text-[#10B981] bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl border border-emerald-200 transition-colors cursor-pointer"
+                className="text-xs font-bold text-[#10B981] bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl border border-emerald-200 transition-colors cursor-pointer whitespace-nowrap"
               >
                 ✓ Tất cả học viên có mặt
               </button>
               <button
                 onClick={() => handleMarkAll('Absent')}
-                className="text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
+                className="text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl transition-colors cursor-pointer whitespace-nowrap"
               >
                 Đặt lại học viên
               </button>

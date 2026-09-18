@@ -991,7 +991,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setDailyCoachAssignments(prev => {
-      const currentList = prev[classId] || [];
+      let currentList = prev[classId];
+      if (currentList === undefined) {
+        const cls = classes.find(c => c.id === classId);
+        if (cls?.coachIds && cls.coachIds.length > 0) {
+          currentList = [...cls.coachIds];
+        } else if (cls?.coachId) {
+          currentList = [cls.coachId];
+        } else if (classId.startsWith('CLS_')) {
+          const parts = classId.split('_');
+          const facId = parts[1];
+          const shiftId = parts[2];
+          const matchingClass = classes.find(c => c.facilityId === facId && c.shiftId === shiftId);
+          const candidate = matchingClass?.coachId || coaches.find(c => c.assignedFacilityId === facId && c.assignedShiftId === shiftId)?.id;
+          currentList = candidate ? [candidate] : [];
+        } else {
+          currentList = [];
+        }
+      }
       const newIds = validIds.filter(id => !currentList.includes(id));
       if (!newIds.length) return prev;
       const nextList = [...currentList, ...newIds];
@@ -1010,7 +1027,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else {
       showToast(`Đã thêm ${validIds.length} Huấn luyện viên vào ca học!`, 'success');
     }
-  }, [currentUser, coaches, checkCoachShiftConflict, dispatchCoachReminderNotification]);
+  }, [currentUser, coaches, classes, checkCoachShiftConflict, dispatchCoachReminderNotification]);
 
   const removeCoachFromDailyClass = useCallback((classId: string, coachId: string) => {
     if (currentUser.role === 'COACH') {
@@ -1024,7 +1041,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setDailyCoachAssignments(prev => {
-      const currentList = prev[classId] || [];
+      let currentList = prev[classId];
+      if (currentList === undefined) {
+        const cls = classes.find(c => c.id === classId);
+        if (cls?.coachIds && cls.coachIds.length > 0) {
+          currentList = [...cls.coachIds];
+        } else if (cls?.coachId) {
+          currentList = [cls.coachId];
+        } else if (classId.startsWith('CLS_')) {
+          const parts = classId.split('_');
+          const fId = parts[1];
+          const sId = parts[2];
+          const matchingClass = classes.find(c => c.facilityId === fId && c.shiftId === sId);
+          const candidate = matchingClass?.coachId || coaches.find(c => c.assignedFacilityId === fId && c.assignedShiftId === sId)?.id;
+          currentList = candidate ? [candidate] : [];
+        } else {
+          currentList = [];
+        }
+      }
       const nextList = currentList.filter(id => id !== coachId);
       const next = { ...prev, [classId]: nextList };
       try {
@@ -1037,7 +1071,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const coach = coaches.find(c => c.id === coachId);
     showToast(`Đã xóa HLV ${coach?.name || coachId} khỏi ca học!`, 'info');
-  }, [currentUser, coaches]);
+  }, [currentUser, coaches, classes]);
 
   const assignCoachToDailyClass = useCallback((classId: string, coachId: string) => {
     if (currentUser.role === 'COACH') {

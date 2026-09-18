@@ -44,6 +44,7 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
     currentUser,
     managedFacilityId,
     updateDailyClassNote,
+    dailyCoachAssignments,
     dailyStudentAssignments,
     classCoachStudentAssignments,
     assignStudentToCoachInClass,
@@ -61,12 +62,15 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
 
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [detailNoteInput, setDetailNoteInput] = useState('');
+  const [isAddCoachModalOpen, setIsAddCoachModalOpen] = useState(false);
+  const [selectedCoachIdsToAdd, setSelectedCoachIdsToAdd] = useState<string[]>([]);
+  const [coachSearchQuery, setCoachSearchQuery] = useState('');
 
   const currentClass = getClassById(classId) || classes.find(c => c.id === classId) || classes[0];
   const isCoach = currentUser.role === 'COACH';
   const canManage =
     currentUser.role === 'ADMIN' ||
-    (currentUser.role === 'FACILITY_MANAGER' && managedFacilityId && currentClass.facilityId === managedFacilityId);
+    (currentUser.role === 'FACILITY_MANAGER' && (!currentClass.facilityId || !managedFacilityId || currentClass.facilityId === managedFacilityId));
   const canManageNote = canManage;
 
   const classDate = useMemo(() => {
@@ -289,11 +293,19 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
   const classCoaches: Coach[] = useMemo(() => {
     const map = new Map<string, Coach>();
 
-    if (currentClass.coaches && currentClass.coaches.length > 0) {
-      currentClass.coaches.forEach(c => map.set(c.id, c));
-    } else if (currentClass.coachName && currentClass.coachName !== 'Chưa có HLV') {
-      const found = coaches.find(c => c.name === currentClass.coachName || c.id === currentClass.coachId);
-      if (found) map.set(found.id, found);
+    if (dailyCoachAssignments && currentClass.id in dailyCoachAssignments) {
+      const assignedIds = dailyCoachAssignments[currentClass.id] || [];
+      assignedIds.forEach(cid => {
+        const found = coaches.find(c => c.id === cid);
+        if (found) map.set(found.id, found);
+      });
+    } else {
+      if (currentClass.coaches && currentClass.coaches.length > 0) {
+        currentClass.coaches.forEach(c => map.set(c.id, c));
+      } else if (currentClass.coachName && currentClass.coachName !== 'Chưa có HLV') {
+        const found = coaches.find(c => c.name === currentClass.coachName || c.id === currentClass.coachId);
+        if (found) map.set(found.id, found);
+      }
     }
 
     // Include coaches added inside assignment groups
@@ -307,7 +319,72 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
     });
 
     return Array.from(map.values());
-  }, [currentClass, coaches, assignmentGroups]);
+  }, [currentClass, coaches, assignmentGroups, dailyCoachAssignments]);
+
+  // Coaches available to add to class (not currently in classCoaches)
+  const assignedCoachIdSet = useMemo(() => {
+    return new Set(classCoaches.map(c => c.id));
+  }, [classCoaches]);
+
+  const availableCoachesToAdd = useMemo(() => {
+    return coaches.filter(c => !assignedCoachIdSet.has(c.id));
+  }, [coaches, assignedCoachIdSet]);
+
+  const selectableCoachesToAdd = useMemo(() => {
+    return availableCoachesToAdd.filter(c => !checkCoachShiftConflict(c.id, currentClass.id));
+  }, [availableCoachesToAdd, checkCoachShiftConflict, currentClass.id]);
+
+  const filteredAvailableCoaches = useMemo(() => {
+    if (!coachSearchQuery.trim()) return availableCoachesToAdd;
+    const query = coachSearchQuery.toLowerCase().trim();
+    return availableCoachesToAdd.filter(c =>
+      c.name.toLowerCase().includes(query) ||
+      (c.phone && c.phone.includes(query))
+    );
+  }, [availableCoachesToAdd, coachSearchQuery]);
+
+  const handleToggleCoachSelect = (coachId: string) => {
+    if (checkCoachShiftConflict(coachId, currentClass.id)) {
+      return;
+    }
+    setSelectedCoachIdsToAdd(prev =>
+      prev.includes(coachId) ? prev.filter(id => id !== coachId) : [...prev, coachId]
+    );
+  };
+
+  const handleToggleSelectAllCoaches = () => {
+    const selectable = filteredAvailableCoaches.filter(c => !checkCoachShiftConflict(c.id, currentClass.id));
+    if (selectable.length === 0) return;
+    const allSelected = selectable.every(c => selectedCoachIdsToAdd.includes(c.id));
+    if (allSelected) {
+      const selectableIds = new Set(selectable.map(c => c.id));
+      setSelectedCoachIdsToAdd(prev => prev.filter(id => !selectableIds.has(id)));
+    } else {
+      const newIds = new Set([...selectedCoachIdsToAdd, ...selectable.map(c => c.id)]);
+      setSelectedCoachIdsToAdd(Array.from(newIds));
+    }
+  };
+
+  const handleCloseAddCoachModal = () => {
+    setIsAddCoachModalOpen(false);
+    setSelectedCoachIdsToAdd([]);
+    setCoachSearchQuery('');
+  };
+
+  const handleSaveAddCoach = () => {
+    if (selectedCoachIdsToAdd.length === 0) return;
+    addCoachToDailyClass(currentClass.id, selectedCoachIdsToAdd);
+    handleCloseAddCoachModal();
+  };
+
+  const handleRemoveCoach = (coachId: string) => {
+    removeCoachFromDailyClass(currentClass.id, coachId);
+    const updated = assignmentGroups.map(g => ({
+      ...g,
+      coachIds: g.coachIds.filter(id => id !== coachId)
+    }));
+    saveAssignmentGroups(updated);
+  };
 
   const assignedStudentIdSet = useMemo(() => {
     const set = new Set<string>();
@@ -625,7 +702,7 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
           className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-slate-800 transition-colors cursor-pointer shadow-xs"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Quay lại danh sách lớp học</span>
+          <span>Quay lại</span>
         </button>
       </div>
     );
@@ -640,7 +717,7 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
           className="inline-flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-emerald-700 bg-white hover:bg-emerald-50/60 px-4 py-2.5 rounded-xl border border-slate-200 shadow-xs transition-all self-start cursor-pointer group"
         >
           <ArrowLeft className="w-4 h-4 text-emerald-600 group-hover:-translate-x-0.5 transition-transform" />
-          <span>{currentClass.id.startsWith('CLS_') ? 'Quay lại lịch học' : 'Quay lại danh sách lớp học'}</span>
+          <span>Quay lại</span>
         </button>
 
         <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
@@ -762,13 +839,23 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
 
         {/* Dedicated Coaches Section */}
         <div className="pt-5 border-t border-slate-100 space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
               <UserCheck className="w-4 h-4 text-emerald-600" />
               <span>
                 Huấn Luyện Viên Phụ Trách ({classCoaches.length})
               </span>
             </div>
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => setIsAddCoachModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-xs rounded-xl border border-emerald-200 transition-all cursor-pointer shadow-2xs shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Thêm HLV</span>
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -776,27 +863,53 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
               classCoaches.map((c: Coach) => (
                 <div
                   key={c.id}
-                  className="flex items-center gap-3 p-3 rounded-2xl border transition-all shadow-2xs bg-slate-50/90 hover:bg-slate-100/80 border-slate-200/80"
+                  className="flex items-center justify-between gap-2.5 p-3 rounded-2xl border transition-all shadow-2xs bg-slate-50/90 hover:bg-slate-100/80 border-slate-200/80 group"
                 >
-                  {c.avatar ? (
-                    <img
-                      src={c.avatar}
-                      alt={c.name}
-                      className="w-10 h-10 rounded-xl object-cover border border-slate-200 shrink-0"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white font-bold text-sm flex items-center justify-center shrink-0">
-                      {c.name.charAt(0)}
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    {c.avatar ? (
+                      <img
+                        src={c.avatar}
+                        alt={c.name}
+                        className="w-10 h-10 rounded-xl object-cover border border-slate-200 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white font-bold text-sm flex items-center justify-center shrink-0">
+                        {c.name.charAt(0)}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-extrabold text-[#0F172A] truncate">{c.name}</div>
+                      {c.phone && <div className="text-[11px] text-slate-400 truncate">{c.phone}</div>}
                     </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-extrabold text-[#0F172A] truncate">{c.name}</div>
                   </div>
+
+                  {canManage && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveCoach(c.id)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer shrink-0"
+                      title={`Xóa HLV ${c.name} khỏi ca học`}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               ))
             ) : (
-              <div className="p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-xs text-amber-700 font-medium">
-                Chưa có Huấn luyện viên phụ trách ca học này.
+              <div className="col-span-full p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <span className="text-xs text-amber-700 font-medium">
+                  Chưa có Huấn luyện viên phụ trách ca học này.
+                </span>
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={() => setIsAddCoachModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white hover:bg-emerald-700 font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Thêm HLV ngay</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1826,6 +1939,158 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
             </div>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal Thêm Huấn Luyện Viên */}
+      <Modal
+        isOpen={isAddCoachModalOpen}
+        onClose={handleCloseAddCoachModal}
+        title="Thêm Huấn Luyện Viên Phụ Trách"
+        subtitle={`${currentClass.name || 'Lớp học'} • ${currentClass.shiftName || currentClass.scheduleDaysText || ''}`}
+        maxWidth="lg"
+      >
+        <div className="space-y-4">
+          {/* Search box */}
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Tìm kiếm theo tên hoặc số điện thoại HLV..."
+              value={coachSearchQuery}
+              onChange={e => setCoachSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-emerald-500 focus:bg-white transition-all shadow-2xs"
+            />
+          </div>
+
+          {/* Header & Quick actions */}
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              Danh sách HLV khả dụng ({availableCoachesToAdd.length})
+            </span>
+            {selectableCoachesToAdd.length > 1 && (
+              <button
+                type="button"
+                onClick={handleToggleSelectAllCoaches}
+                className="text-xs font-bold text-[#10B981] hover:underline cursor-pointer"
+              >
+                {filteredAvailableCoaches.filter(c => !checkCoachShiftConflict(c.id, currentClass.id)).every(c => selectedCoachIdsToAdd.includes(c.id))
+                  ? 'Bỏ chọn tất cả'
+                  : 'Chọn tất cả'}
+              </button>
+            )}
+          </div>
+
+          {/* Coach List */}
+          {availableCoachesToAdd.length === 0 ? (
+            <div className="p-6 bg-slate-50 rounded-2xl text-center text-xs sm:text-sm text-slate-500 border border-dashed border-slate-200">
+              Tất cả Huấn luyện viên trong hệ thống đã được phân công vào ca học này.
+            </div>
+          ) : filteredAvailableCoaches.length === 0 ? (
+            <div className="p-6 bg-slate-50 rounded-2xl text-center text-xs sm:text-sm text-slate-500 border border-dashed border-slate-200">
+              Không tìm thấy Huấn luyện viên nào phù hợp với từ khóa "{coachSearchQuery}".
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-64 overflow-y-auto p-1">
+                {filteredAvailableCoaches.map(c => {
+                  const conflict = checkCoachShiftConflict(c.id, currentClass.id);
+                  const isSelected = selectedCoachIdsToAdd.includes(c.id);
+                  const isDisabled = Boolean(conflict);
+
+                  return (
+                    <label
+                      key={c.id}
+                      className={`flex items-start sm:items-center justify-between gap-2.5 p-3 rounded-xl border transition-all select-none ${
+                        isDisabled
+                          ? 'bg-slate-100/75 border-slate-200 text-slate-400 cursor-not-allowed'
+                          : isSelected
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold shadow-2xs cursor-pointer'
+                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer'
+                      }`}
+                      title={conflict ? `Đang dạy ca ${conflict.conflictShiftName} tại ${conflict.conflictFacilityName}` : undefined}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={isDisabled}
+                          onChange={() => !isDisabled && handleToggleCoachSelect(c.id)}
+                          className={`w-4 h-4 rounded text-[#10B981] focus:ring-[#10B981] accent-[#10B981] ${
+                            isDisabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'
+                          }`}
+                        />
+                        {c.avatar ? (
+                          <img src={c.avatar} alt={c.name} className="w-7 h-7 rounded-lg object-cover border border-slate-200 shrink-0" />
+                        ) : (
+                          <div className="w-7 h-7 rounded-lg bg-emerald-500 text-white text-xs font-bold flex items-center justify-center shrink-0">
+                            {c.name.charAt(0)}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <span className={`text-xs font-semibold block truncate ${isDisabled ? 'text-slate-500' : ''}`}>
+                            {c.name}
+                          </span>
+                          {conflict ? (
+                            <span className="text-[10px] text-amber-600 block truncate flex items-center gap-1 font-medium mt-0.5">
+                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                              Trùng ca tại {conflict.conflictFacilityName}
+                            </span>
+                          ) : c.phone ? (
+                            <span className="text-[11px] text-slate-400 block truncate font-normal">
+                              {c.phone}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {conflict && (
+                        <span className="shrink-0 px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-md border border-amber-200">
+                          Trùng ca
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <span className="text-xs text-slate-500 font-medium">
+                  Đã chọn: <strong className="text-[#10B981] font-bold">{selectedCoachIdsToAdd.length}</strong> HLV
+                </span>
+                {filteredAvailableCoaches.some(c => checkCoachShiftConflict(c.id, currentClass.id)) && (
+                  <span className="text-[11px] text-amber-600 font-medium flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                    Một số HLV trùng ca tại cơ sở khác
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Modal Footer Actions */}
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={handleCloseAddCoachModal}
+              className="px-4 py-2 text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-all cursor-pointer shadow-2xs"
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              disabled={selectedCoachIdsToAdd.length === 0}
+              onClick={handleSaveAddCoach}
+              className={`px-5 py-2 text-xs font-bold text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 ${
+                selectedCoachIdsToAdd.length > 0
+                  ? 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer'
+                  : 'bg-slate-300 cursor-not-allowed opacity-60'
+              }`}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Thêm vào ca học {selectedCoachIdsToAdd.length > 0 ? `(${selectedCoachIdsToAdd.length})` : ''}</span>
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
