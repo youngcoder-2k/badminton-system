@@ -435,6 +435,66 @@ export const DashboardView: React.FC = () => {
           </button>
         </div>
 
+        {/* Coach Today Sessions List - Khôi phục theo đúng ảnh người dùng yêu cầu */}
+        <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 p-4 sm:p-5 shadow-xs">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="font-bold text-base text-[#0F172A]">Lịch Dạy Hôm Nay</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Các ca tập cần huấn luyện và điểm danh</p>
+            </div>
+            <span className="text-xs font-bold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full">
+              {coachTodaySessions.length} ca học
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {coachTodaySessions.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                Hôm nay bạn chưa có ca dạy nào cần điểm danh.
+              </div>
+            ) : (
+              coachTodaySessions.map(session => (
+                <div
+                  key={session.id}
+                  className="p-4 bg-slate-50 hover:bg-emerald-50/40 rounded-2xl border border-slate-100 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-[3.5px] h-10 bg-[#10B981] rounded-full shrink-0" />
+
+                    <div>
+                      <h3 className="text-sm font-bold text-[#0F172A]">
+                        {getDisplayFacilityName(session.facilityName, session.facilityId)}
+                      </h3>
+                      <div className="mt-1">
+                        <span className="inline-flex items-center text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-md">
+                          {getDisplayShiftName(session)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                    {session.attendanceDone ? (
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" />
+                        <span>{session.attendedByRole === 'COACH' ? 'GV đã điểm danh' : 'Đã điểm danh'}</span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handleStartAttendance(session.classId, session.id, session.facilityId)}
+                        className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#10B981] hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+                      >
+                        <CheckSquare className="w-3.5 h-3.5" />
+                        <span>Điểm danh</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
         {/* Modal Đăng Ký Ca Dạy Hàng Ngày Trực Tiếp Tại Dashboard */}
         <Modal
           isOpen={isCoachModalOpen}
