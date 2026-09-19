@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   LayoutDashboard,
   BookOpen,
@@ -23,6 +23,7 @@ export const Sidebar: React.FC = () => {
     activeTab,
     navigate,
     students,
+    classes,
     sessions,
     payments,
     chatMessages,
@@ -38,9 +39,23 @@ export const Sidebar: React.FC = () => {
     s => s.remainingSessions <= 2 && s.remainingSessions > 0
   ).length;
   const expiredStudentsCount = students.filter(s => s.remainingSessions === 0).length;
-  const unpaidPaymentsCount = payments.filter(
-    p => p.status === 'Unpaid' || p.status === 'Overdue'
-  ).length;
+
+  const unpaidPaymentsCount = useMemo(() => {
+    const tuitionPayments = payments.filter(
+      p => p.paymentType === 'Tuition' || !p.paymentType || Boolean(p.studentId)
+    );
+    if (isFacilityManager && currentUser.facilityId) {
+      return tuitionPayments.filter(p => {
+        const facId =
+          p.facilityId ||
+          classes.find(c => c.id === p.classId)?.facilityId ||
+          students.find(s => s.id === p.studentId)?.facilityId ||
+          students.find(s => s.id === p.studentId)?.scheduledSessions?.[0]?.facilityId;
+        return facId === currentUser.facilityId && (p.status === 'Unpaid' || p.status === 'Overdue');
+      }).length;
+    }
+    return tuitionPayments.filter(p => p.status === 'Unpaid' || p.status === 'Overdue').length;
+  }, [payments, isFacilityManager, currentUser.facilityId, classes, students]);
   
   // Pending today sessions
   const targetSessions = (isCoach || isFacilityManager) ? assignedSessions : sessions;
@@ -268,7 +283,7 @@ export const Sidebar: React.FC = () => {
           </div>
           <button
             onClick={() => navigate('settings')}
-            title="Cài đặt hệ thống"
+            title="Cài đặt"
             className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
           >
             <Settings className="w-4 h-4" />

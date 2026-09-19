@@ -9,12 +9,29 @@ import {
   Trash2,
   Check,
   MessageSquare,
-  AtSign
+  AtSign,
+  Mail,
+  Smile,
+  Sparkles,
+  Clock,
+  Inbox,
+  Lock,
+  Info
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { INITIAL_USERS } from '../data/mockData';
-import { ChatMessage, UserRole } from '../types';
+import { ChatMessage, UserRole, EmailNotificationLog } from '../types';
 import { Modal } from '../components/common/Modal';
+
+const QUICK_REACTIONS = [
+  { emoji: '✅', label: 'Đã xác nhận' },
+  { emoji: '👍', label: 'Thích' },
+  { emoji: '❤️', label: 'Yêu thích' },
+  { emoji: '🔥', label: 'Tuyệt vời' },
+  { emoji: '👏', label: 'Hoan hô' },
+  { emoji: '🙏', label: 'Cảm ơn' },
+  { emoji: '🏸', label: 'Cầu lông' }
+];
 
 export const ChatView: React.FC = () => {
   const {
@@ -23,8 +40,12 @@ export const ChatView: React.FC = () => {
     sendChatMessage,
     toggleChatReaction,
     deleteChatMessage,
+    emailLogs,
+    clearEmailLogs,
     coaches
   } = useApp();
+
+  const isCoach = currentUser.role === 'COACH';
 
   const [inputContent, setInputContent] = useState('');
   const [isNotice, setIsNotice] = useState(false);
@@ -36,8 +57,10 @@ export const ChatView: React.FC = () => {
   const [mentionIndex, setMentionIndex] = useState(0);
   const [mentionAnchorIndex, setMentionAnchorIndex] = useState(0);
 
-  // Modal to see who confirmed
+  // Modals
   const [selectedMessageForDetails, setSelectedMessageForDetails] = useState<ChatMessage | null>(null);
+  const [isEmailLogsModalOpen, setIsEmailLogsModalOpen] = useState(false);
+  const [activeReactionPickerMsgId, setActiveReactionPickerMsgId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -199,6 +222,9 @@ export const ChatView: React.FC = () => {
 
   const handleSend = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (isCoach) {
+      return;
+    }
     const text = inputContent.trim();
     if (!text || isSendingRef.current) return;
 
@@ -391,30 +417,55 @@ export const ChatView: React.FC = () => {
             <MessageSquare className="w-5 h-5" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-lg sm:text-xl font-extrabold text-[#0F172A] tracking-tight">
                 Kênh Trao Đổi Chung
               </h1>
               <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                 Toàn hệ thống
               </span>
+              {isCoach && (
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                  <Lock className="w-3 h-3 text-amber-600" />
+                  <span>HLV: Chỉ xem & React</span>
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Trao đổi nhanh giữa Admin, Quản lý cơ sở và Huấn luyện viên
+              Trao đổi nhanh giữa Admin, Quản lý cơ sở và Huấn luyện viên • Tự động gửi email khi tag tên (@)
             </p>
           </div>
         </div>
 
-        {/* Current User Pill */}
-        <div className="flex items-center gap-2.5 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-200 self-start sm:self-auto">
-          <img
-            src={currentUser.avatar}
-            alt={currentUser.name}
-            className="w-7 h-7 rounded-lg object-cover border border-slate-200 shrink-0"
-          />
-          <div className="text-xs">
-            <span className="font-bold text-[#0F172A] mr-1.5">{currentUser.name}</span>
-            <span className="inline-block">{getRoleBadge(currentUser.role)}</span>
+        {/* Right Header: Email Logs Trigger & Current User Pill */}
+        <div className="flex items-center gap-2.5 flex-wrap self-start sm:self-auto">
+          {/* Nút xem Nhật ký Email thông báo */}
+          <button
+            type="button"
+            onClick={() => setIsEmailLogsModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-800 rounded-xl border border-sky-200 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+            title="Xem nhật ký các email thông báo đã tự động gửi khi tag tên (@)"
+          >
+            <Mail className="w-3.5 h-3.5 text-sky-600" />
+            <span>Nhật ký Email</span>
+            {emailLogs.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-sky-200/90 text-sky-900 font-extrabold">
+                {emailLogs.length}
+              </span>
+            )}
+          </button>
+
+          {/* Current User Pill */}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-200">
+            <img
+              src={currentUser.avatar}
+              alt={currentUser.name}
+              className="w-7 h-7 rounded-lg object-cover border border-slate-200 shrink-0"
+            />
+            <div className="text-xs">
+              <span className="font-bold text-[#0F172A] mr-1.5">{currentUser.name}</span>
+              <span className="inline-block">{getRoleBadge(currentUser.role)}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -477,7 +528,7 @@ export const ChatView: React.FC = () => {
                   key={u.id}
                   src={u.avatar}
                   alt={u.name}
-                  title={`${u.name} (${u.role === 'ADMIN' ? 'Admin' : u.role === 'FACILITY_MANAGER' ? 'QL Cơ sở' : 'HLV'})`}
+                  title={`${u.name} (${u.role === 'ADMIN' ? 'Admin' : u.role === 'FACILITY_MANAGER' ? 'QL Cơ sở' : 'HLV'}) • ${u.email || ''}`}
                   className="w-6 h-6 rounded-full border-2 border-white object-cover shadow-2xs"
                 />
               ))}
@@ -515,7 +566,12 @@ export const ChatView: React.FC = () => {
                   msg.content.toLowerCase().includes(`@${currentUser.name.toLowerCase()}`) ||
                   msg.content.includes('@Tất cả') ||
                   msg.content.toLowerCase().includes('@tất cả') ||
-                  msg.content.toLowerCase().includes('@mọi người'));
+                  msg.content.toLowerCase().includes('@mọi người') ||
+                  (currentUser.role === 'ADMIN' && (msg.content.toLowerCase().includes('@admin') || msg.content.toLowerCase().includes('@ban quản trị'))) ||
+                  (currentUser.role === 'FACILITY_MANAGER' && (msg.content.toLowerCase().includes('@quản lý') || msg.content.toLowerCase().includes('@ql'))) ||
+                  (currentUser.role === 'COACH' && (msg.content.toLowerCase().includes('@hlv') || msg.content.toLowerCase().includes('@huấn luyện viên'))));
+
+              const isPickerOpen = activeReactionPickerMsgId === msg.id;
 
               return (
                 <div
@@ -527,8 +583,8 @@ export const ChatView: React.FC = () => {
                     src={msg.senderAvatar}
                     alt={msg.senderName}
                     className="w-8 h-8 rounded-full object-cover border border-slate-200 shrink-0 shadow-2xs mt-0.5 cursor-pointer hover:opacity-90"
-                    onClick={() => handleQuickTagUser(msg.senderName)}
-                    title={`Nhấp để nhắc tên ${msg.senderName}`}
+                    onClick={() => !isCoach && handleQuickTagUser(msg.senderName)}
+                    title={!isCoach ? `Nhấp để nhắc tên ${msg.senderName}` : msg.senderName}
                   />
 
                   {/* Message Bubble Container (Tối ưu độ rộng trên mobile & desktop) */}
@@ -536,9 +592,11 @@ export const ChatView: React.FC = () => {
                     {/* Sender Info Line */}
                     <div className={`flex items-center gap-1.5 text-xs flex-wrap ${isMine ? 'justify-end' : 'justify-start'}`}>
                       <span
-                        onClick={() => handleQuickTagUser(msg.senderName)}
-                        className="font-bold text-[#0F172A] hover:text-emerald-700 hover:underline cursor-pointer transition-colors"
-                        title={`Nhấp để nhắc tên ${msg.senderName} (@)`}
+                        onClick={() => !isCoach && handleQuickTagUser(msg.senderName)}
+                        className={`font-bold text-[#0F172A] transition-colors ${
+                          !isCoach ? 'hover:text-emerald-700 hover:underline cursor-pointer' : ''
+                        }`}
+                        title={!isCoach ? `Nhấp để nhắc tên ${msg.senderName} (@)` : msg.senderName}
                       >
                         {msg.senderName}
                       </span>
@@ -567,7 +625,7 @@ export const ChatView: React.FC = () => {
                     {isMentionedToMe && (
                       <div className="flex items-center gap-1 text-[10px] font-extrabold text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-300 shadow-2xs w-fit mb-1">
                         <AtSign className="w-3 h-3 text-amber-700" />
-                        <span>Đã nhắc tên bạn</span>
+                        <span>Đã nhắc tên bạn (Đã nhận thông báo & Email)</span>
                       </div>
                     )}
 
@@ -582,7 +640,7 @@ export const ChatView: React.FC = () => {
                             ? 'bg-emerald-600 text-white rounded-tr-sm'
                             : 'bg-white border border-slate-200 text-[#0F172A] rounded-tl-sm'
                         } ${isMentionedToMe ? 'ring-2 ring-amber-400/60 border-amber-300' : ''} ${
-                          confirmReactions.length > 0 ? 'mb-2.5' : ''
+                          allReactions.length > 0 ? 'mb-2.5' : ''
                         }`}
                       >
                         {/* Notice Tag */}
@@ -598,6 +656,23 @@ export const ChatView: React.FC = () => {
                         <p className="whitespace-pre-line font-normal break-words">
                           {renderMessageContent(msg.content, isMine)}
                         </p>
+
+                        {/* Email Dispatch Indicator Badge */}
+                        {msg.emailNotified && msg.mentionsEmails && msg.mentionsEmails.length > 0 && (
+                          <div className={`mt-2 pt-1.5 border-t text-[11px] flex items-center gap-1.5 flex-wrap ${
+                            isMine ? 'border-emerald-500/50 text-emerald-100' : 'border-slate-100 text-sky-700'
+                          }`}>
+                            <Mail className="w-3 h-3 shrink-0" />
+                            <span>
+                              Đã tự động gửi email thông báo tới:{' '}
+                              <strong>
+                                {msg.mentionsEmails.length > 2
+                                  ? `${msg.mentionsEmails.slice(0, 2).join(', ')} +${msg.mentionsEmails.length - 2} người khác`
+                                  : msg.mentionsEmails.join(', ')}
+                              </strong>
+                            </span>
+                          </div>
+                        )}
 
                         {/* Reaction Pill Docked on Corner of Bubble (Messenger FB style) */}
                         {allReactions.length > 0 && (
@@ -625,22 +700,72 @@ export const ChatView: React.FC = () => {
                       </div>
 
                       {/* Quick Action Buttons Row (Hover Trigger) */}
-                      <div className="flex items-center gap-1 opacity-70 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-opacity">
-                        {/* Nút Tag Nhanh Người Gửi */}
-                        <button
-                          type="button"
-                          onClick={() => handleQuickTagUser(msg.senderName)}
-                          title={`Nhắc tên ${msg.senderName} (@)`}
-                          className="w-7 h-7 rounded-full bg-white hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 border border-slate-200 hover:border-emerald-300 flex items-center justify-center transition-all cursor-pointer shadow-xs"
-                        >
-                          <AtSign className="w-3.5 h-3.5" />
-                        </button>
+                      <div className="flex items-center gap-1 opacity-80 sm:opacity-0 sm:group-hover/msg:opacity-100 transition-opacity relative">
+                        {/* Nút Tag Nhanh Người Gửi (Chỉ dành cho Admin / Quản lý) */}
+                        {!isCoach && (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickTagUser(msg.senderName)}
+                            title={`Nhắc tên ${msg.senderName} (@)`}
+                            className="w-7 h-7 rounded-full bg-white hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 border border-slate-200 hover:border-emerald-300 flex items-center justify-center transition-all cursor-pointer shadow-xs"
+                          >
+                            <AtSign className="w-3.5 h-3.5" />
+                          </button>
+                        )}
 
-                        {/* Nút React Nhanh */}
+                        {/* Nút Mở Thanh Chọn Biểu Cảm Emoji */}
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setActiveReactionPickerMsgId(isPickerOpen ? null : msg.id)}
+                            title="Thả cảm xúc biểu cảm (React emoji)"
+                            className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-xs border ${
+                              isPickerOpen
+                                ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                : 'bg-white hover:bg-slate-50 text-slate-400 hover:text-amber-600 border-slate-200 hover:border-amber-300'
+                            }`}
+                          >
+                            <Smile className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Quick Emoji Reaction Palette Picker */}
+                          {isPickerOpen && (
+                            <div
+                              className={`absolute bottom-full ${isMine ? 'right-0' : 'left-0'} mb-1.5 p-1 bg-white rounded-2xl shadow-xl border border-slate-200/90 flex items-center gap-1 z-20 animate-in fade-in zoom-in-95 duration-100`}
+                              onClick={e => e.stopPropagation()}
+                            >
+                              {QUICK_REACTIONS.map(qr => {
+                                const hasReactedThis = (msg.reactions || []).some(
+                                  r => r.userId === currentUser.id && r.emoji === qr.emoji
+                                );
+                                return (
+                                  <button
+                                    key={qr.emoji}
+                                    type="button"
+                                    onClick={() => {
+                                      toggleChatReaction(msg.id, qr.emoji, qr.label);
+                                      setActiveReactionPickerMsgId(null);
+                                    }}
+                                    title={`${qr.label} (${qr.emoji})`}
+                                    className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm transition-transform hover:scale-125 active:scale-95 cursor-pointer ${
+                                      hasReactedThis
+                                        ? 'bg-emerald-100 ring-1 ring-emerald-400'
+                                        : 'hover:bg-slate-100'
+                                    }`}
+                                  >
+                                    {qr.emoji}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Nút React Nhanh Xác Nhận ✅ */}
                         <button
                           type="button"
                           onClick={() => toggleChatReaction(msg.id, '✅', 'Đã xác nhận')}
-                          title={hasIConfirmed ? 'Bỏ xác nhận (Đã react ✅)' : 'Xác nhận (React ✅)'}
+                          title={hasIConfirmed ? 'Bỏ xác nhận (Đã react ✅)' : 'Xác nhận nhanh (React ✅)'}
                           className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-xs border ${
                             hasIConfirmed
                               ? 'bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600'
@@ -663,146 +788,187 @@ export const ChatView: React.FC = () => {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Composer (Đơn giản, gọn gàng, hỗ trợ Tag tên @) */}
-        <div className="p-3 sm:p-3.5 bg-white border-t border-slate-200 relative">
-          {/* Autocomplete Popup Nhắc Tên Nhân Sự */}
-          {isMentionOpen && filteredMentionUsers.length > 0 && (
-            <div
-              ref={mentionDropdownRef}
-              className="absolute bottom-full left-3 sm:left-4 right-3 sm:right-4 mb-2 bg-white rounded-2xl shadow-xl border border-slate-200/90 overflow-hidden z-30 max-h-64 flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-150"
-            >
-              {/* Header của Popup */}
-              <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-500">
-                <div className="flex items-center gap-1.5">
-                  <AtSign className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Nhắc tên nhân sự trong hệ thống</span>
-                  {mentionQuery && <span className="text-emerald-700">("{mentionQuery}")</span>}
+        {/* Input Composer / Coach React Guidance Area */}
+        {isCoach ? (
+          /* CHẾ ĐỘ HUẤN LUYỆN VIÊN: CHỈ REACT BIỂU CẢM, KHÔNG ĐƯỢC CHAT */
+          <div className="p-3.5 sm:p-4 bg-gradient-to-r from-amber-50/95 via-emerald-50/80 to-teal-50/95 border-t border-amber-200/90 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left animate-in fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+                <Shield className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 justify-center sm:justify-start flex-wrap">
+                  <span className="text-xs font-extrabold text-[#0F172A] uppercase tracking-wide">
+                    Chế độ Huấn luyện viên: Chỉ xem & Thả biểu cảm (React)
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                    Không thể gửi tin nhắn
+                  </span>
                 </div>
-                <span className="text-[10px] text-slate-400 hidden sm:inline">
-                  Dùng ↑ ↓ để chọn, Enter / Tab để chèn
-                </span>
+                <p className="text-[11px] text-slate-600 mt-0.5 max-w-xl leading-relaxed">
+                  HLV <strong>{currentUser.name}</strong> chỉ có quyền thả cảm xúc (react) trên từng tin nhắn để xác nhận đã nhận thông tin từ Ban Quản Trị & Quản lý cơ sở.
+                </p>
               </div>
+            </div>
 
-              {/* Danh sách người có thể tag */}
-              <div className="overflow-y-auto py-1 divide-y divide-slate-50">
-                {filteredMentionUsers.map((user, idx) => {
-                  const isSelected = idx === mentionIndex;
-                  const isAll = user.id === 'ALL';
+            <div className="flex items-center gap-1.5 bg-white/90 border border-amber-200 px-3 py-2 rounded-2xl shadow-xs">
+              <span className="text-[11px] font-bold text-slate-500 mr-1 hidden sm:inline">Phản hồi:</span>
+              <div className="flex items-center gap-1">
+                {QUICK_REACTIONS.slice(0, 5).map(qr => (
+                  <span key={qr.emoji} className="text-base select-none cursor-default" title={qr.label}>
+                    {qr.emoji}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* CHẾ ĐỘ ADMIN & QUẢN LÝ CƠ SỞ: SOẠN VÀ GỬI TIN NHẮN (TAG TÊN & TỰ ĐỘNG GỬI EMAIL) */
+          <div className="p-3 sm:p-3.5 bg-white border-t border-slate-200 relative">
+            {/* Autocomplete Popup Nhắc Tên Nhân Sự */}
+            {isMentionOpen && filteredMentionUsers.length > 0 && (
+              <div
+                ref={mentionDropdownRef}
+                className="absolute bottom-full left-3 sm:left-4 right-3 sm:right-4 mb-2 bg-white rounded-2xl shadow-xl border border-slate-200/90 overflow-hidden z-30 max-h-64 flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-150"
+              >
+                {/* Header của Popup */}
+                <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-500">
+                  <div className="flex items-center gap-1.5">
+                    <AtSign className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Nhắc tên nhân sự (Tự động gửi email thông báo)</span>
+                    {mentionQuery && <span className="text-emerald-700">("{mentionQuery}")</span>}
+                  </div>
+                  <span className="text-[10px] text-slate-400 hidden sm:inline">
+                    Dùng ↑ ↓ để chọn, Enter / Tab để chèn
+                  </span>
+                </div>
 
-                  return (
-                    <div
-                      key={user.id}
-                      onClick={() => insertMention(user)}
-                      onMouseEnter={() => setMentionIndex(idx)}
-                      className={`px-3.5 py-2 flex items-center justify-between gap-2.5 cursor-pointer transition-colors ${
-                        isSelected ? 'bg-emerald-50/80 text-emerald-950' : 'hover:bg-slate-50 text-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        {isAll ? (
-                          <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-2xs">
-                            @
-                          </div>
-                        ) : (
-                          <img
-                            src={user.avatar}
-                            alt={user.name}
-                            className="w-8 h-8 rounded-full object-cover border border-slate-200 shrink-0"
-                          />
-                        )}
+                {/* Danh sách người có thể tag */}
+                <div className="overflow-y-auto py-1 divide-y divide-slate-50">
+                  {filteredMentionUsers.map((user, idx) => {
+                    const isSelected = idx === mentionIndex;
+                    const isAll = user.id === 'ALL';
 
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-xs truncate">
-                              {isAll ? '@Tất cả' : `@${user.name}`}
-                            </span>
-                            {user.role && (
-                              <span className="inline-block scale-90 origin-left">
-                                {getRoleBadge(user.role as UserRole | 'ALL')}
+                    return (
+                      <div
+                        key={user.id}
+                        onClick={() => insertMention(user)}
+                        onMouseEnter={() => setMentionIndex(idx)}
+                        className={`px-3.5 py-2 flex items-center justify-between gap-2.5 cursor-pointer transition-colors ${
+                          isSelected ? 'bg-emerald-50/80 text-emerald-950' : 'hover:bg-slate-50 text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {isAll ? (
+                            <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-2xs">
+                              @
+                            </div>
+                          ) : (
+                            <img
+                              src={user.avatar}
+                              alt={user.name}
+                              className="w-8 h-8 rounded-full object-cover border border-slate-200 shrink-0"
+                            />
+                          )}
+
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-xs truncate">
+                                {isAll ? '@Tất cả' : `@${user.name}`}
                               </span>
-                            )}
+                              {user.role && (
+                                <span className="inline-block scale-90 origin-left">
+                                  {getRoleBadge(user.role as UserRole | 'ALL')}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-slate-400 truncate">
+                              {user.title || (isAll ? 'Thông báo toàn thể nhân sự' : '')}
+                            </p>
                           </div>
-                          <p className="text-[10px] text-slate-400 truncate">
-                            {user.title || (isAll ? 'Thông báo toàn thể nhân sự' : '')}
-                          </p>
                         </div>
+
+                        {isSelected && (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-md shrink-0">
+                            Enter ↵
+                          </span>
+                        )}
                       </div>
-
-                      {isSelected && (
-                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-md shrink-0">
-                          Enter ↵
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          <form onSubmit={handleSend} className="space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <label className="flex items-center gap-2 cursor-pointer font-semibold select-none text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={isNotice}
-                  onChange={e => setIsNotice(e.target.checked)}
-                  className="w-4 h-4 rounded text-emerald-600 accent-emerald-600 cursor-pointer"
+            <form onSubmit={handleSend} className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <label className="flex items-center gap-2 cursor-pointer font-semibold select-none text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={isNotice}
+                    onChange={e => setIsNotice(e.target.checked)}
+                    className="w-4 h-4 rounded text-emerald-600 accent-emerald-600 cursor-pointer"
+                  />
+                  <span className={isNotice ? 'text-amber-800 font-bold' : 'text-slate-600'}>
+                    📌 Đặt làm Thông báo quan trọng (Yêu cầu xác nhận)
+                  </span>
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 hidden md:inline">
+                    📧 Tự động gửi Email khi @tag tên
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleTriggerMention}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-800 px-2 py-0.5 rounded-lg hover:bg-emerald-50 transition-colors cursor-pointer"
+                    title="Nhắc tên ai đó trong tin nhắn"
+                  >
+                    <AtSign className="w-3.5 h-3.5" />
+                    <span>Nhắc tên nhân sự</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Input Box */}
+              <div className="flex items-end gap-2 bg-slate-50 border border-slate-200 rounded-xl p-1.5 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500 transition-all">
+                {/* Nút @ trong ô nhập */}
+                <button
+                  type="button"
+                  onClick={handleTriggerMention}
+                  className="p-1.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer shrink-0"
+                  title="Gõ @ hoặc nhấp vào đây để nhắc tên"
+                >
+                  <AtSign className="w-4 h-4" />
+                </button>
+
+                <textarea
+                  ref={textareaRef}
+                  value={inputContent}
+                  onChange={handleTextChange}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Nhập tin nhắn... (Gõ @ để nhắc tên đồng nghiệp và gửi email thông báo)"
+                  rows={1}
+                  className="flex-1 bg-transparent border-none outline-none resize-none text-sm text-[#0F172A] placeholder-slate-400 max-h-28 px-1 py-1"
+                  style={{ minHeight: '34px' }}
                 />
-                <span className={isNotice ? 'text-amber-800 font-bold' : 'text-slate-600'}>
-                  📌 Đặt làm Thông báo quan trọng (Yêu cầu xác nhận)
-                </span>
-              </label>
 
-              <button
-                type="button"
-                onClick={handleTriggerMention}
-                className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-800 px-2 py-0.5 rounded-lg hover:bg-emerald-50 transition-colors cursor-pointer"
-                title="Nhắc tên ai đó trong tin nhắn"
-              >
-                <AtSign className="w-3.5 h-3.5" />
-                <span>Nhắc tên nhân sự</span>
-              </button>
-            </div>
-
-            {/* Input Box */}
-            <div className="flex items-end gap-2 bg-slate-50 border border-slate-200 rounded-xl p-1.5 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500 transition-all">
-              {/* Nút @ trong ô nhập */}
-              <button
-                type="button"
-                onClick={handleTriggerMention}
-                className="p-1.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer shrink-0"
-                title="Gõ @ hoặc nhấp vào đây để nhắc tên"
-              >
-                <AtSign className="w-4 h-4" />
-              </button>
-
-              <textarea
-                ref={textareaRef}
-                value={inputContent}
-                onChange={handleTextChange}
-                onKeyDown={handleKeyDown}
-                placeholder="Nhập tin nhắn... (Gõ @ để nhắc tên đồng nghiệp)"
-                rows={1}
-                className="flex-1 bg-transparent border-none outline-none resize-none text-sm text-[#0F172A] placeholder-slate-400 max-h-28 px-1 py-1"
-                style={{ minHeight: '34px' }}
-              />
-
-              <button
-                type="submit"
-                disabled={!inputContent.trim()}
-                className={`p-2 rounded-lg font-bold flex items-center justify-center transition-all cursor-pointer shrink-0 ${
-                  inputContent.trim()
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                }`}
-                title="Gửi tin nhắn (Enter)"
-              >
-                <Send className="w-4 h-4" />
-              </button>
-            </div>
-          </form>
-        </div>
+                <button
+                  type="submit"
+                  disabled={!inputContent.trim()}
+                  className={`p-2 rounded-lg font-bold flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                    inputContent.trim()
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  }`}
+                  title="Gửi tin nhắn (Enter)"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
       </div>
 
       {/* Modal View Detail: Những người đã react (Messenger FB Style) */}
@@ -927,6 +1093,92 @@ export const ChatView: React.FC = () => {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Modal: Nhật Ký Email Thông Báo Tự Động Khi Tag Tên (@) */}
+      <Modal
+        isOpen={isEmailLogsModalOpen}
+        onClose={() => setIsEmailLogsModalOpen(false)}
+        title="Nhật Ký Email Thông Báo Tự Động"
+        subtitle="Hệ thống tự động gửi email đến hộp thư người dùng khi được tag tên (@) trong Kênh Trao Đổi"
+        maxWidth="lg"
+      >
+        <div className="space-y-4">
+          <div className="p-3 bg-sky-50 border border-sky-200 rounded-2xl flex items-start gap-2.5 text-xs text-sky-950">
+            <Mail className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+            <div className="leading-relaxed">
+              <strong>Cơ chế tự động:</strong> Mỗi khi Admin hoặc Quản lý cơ sở gửi tin nhắn có nhắc tên (ví dụ <code>@Nguyễn Minh Anh</code> hoặc <code>@Tất cả</code>), hệ thống sẽ lập tức gửi email thông báo kèm nội dung tin nhắn đến địa chỉ email đã đăng ký của nhân sự đó.
+            </div>
+          </div>
+
+          <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+            {emailLogs.length === 0 ? (
+              <div className="py-12 text-center space-y-2">
+                <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto text-lg">
+                  📬
+                </div>
+                <div className="font-bold text-slate-700 text-xs">Chưa có email thông báo nào được gửi</div>
+                <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                  Hãy thử gửi một tin nhắn có tag tên đồng nghiệp như <code>@Nguyễn Minh Anh</code> trong ô nhập tin nhắn để kiểm tra!
+                </p>
+              </div>
+            ) : (
+              emailLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="p-3 bg-white border border-slate-200 rounded-xl shadow-2xs space-y-1.5 hover:border-sky-300 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-[#0F172A]">{log.recipientName}</span>
+                      <span className="text-[11px] text-sky-700 font-mono">({log.recipientEmail})</span>
+                      {log.recipientRole && getRoleBadge(log.recipientRole)}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                        <Check className="w-3 h-3 text-emerald-600" />
+                        <span>Đã gửi (Sent)</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">{log.sentAt}</span>
+                    </div>
+                  </div>
+
+                  <div className="text-xs font-semibold text-slate-800">
+                    {log.subject}
+                  </div>
+
+                  <div className="p-2 bg-slate-50 rounded-lg text-xs text-slate-600 border border-slate-100 font-normal">
+                    "{log.content}"
+                  </div>
+
+                  <div className="text-[10px] text-slate-400 flex items-center justify-between pt-0.5">
+                    <span>Người gửi: <strong>{log.senderName}</strong></span>
+                    <span className="font-mono text-[9px] text-slate-300">{log.id}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+            {emailLogs.length > 0 ? (
+              <button
+                type="button"
+                onClick={clearEmailLogs}
+                className="px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+              >
+                Xóa nhật ký email
+              </button>
+            ) : <div />}
+            <button
+              type="button"
+              onClick={() => setIsEmailLogsModalOpen(false)}
+              className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

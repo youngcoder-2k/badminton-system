@@ -26,6 +26,7 @@ import {
   CoachAttendanceRecord,
   CoachConflictInfo,
   CourtInfo,
+  EmailNotificationLog,
   Facility,
   NotificationItem,
   PaymentItem,
@@ -242,6 +243,8 @@ interface AppContextType {
   sendChatMessage: (content: string, isNotice?: boolean) => void;
   toggleChatReaction: (messageId: string, emoji: string, label: string) => void;
   deleteChatMessage: (messageId: string) => void;
+  emailLogs: EmailNotificationLog[];
+  clearEmailLogs: () => void;
   
   // Toast notifications
   toasts: ToastItem[];
@@ -271,6 +274,7 @@ interface AppContextType {
   removeCoachFromDailyClass: (classId: string, coachId: string) => void;
   assignCoachToDailyClass: (classId: string, coachId: string) => void;
   checkCoachShiftConflict: (coachId: string, targetClassId: string, targetDateStr?: string) => CoachConflictInfo | null;
+  isCoachRegisteredForDate: (coachId: string, dateStr: string) => boolean;
   getDailyClasses: (dateStr: string, filterFacilityId?: string) => BadmintonClass[];
   getClassById: (classId: string, dateStr?: string) => BadmintonClass | undefined;
   
@@ -362,8 +366,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [classesDate, setClassesDate] = useState<string>('2026-08-28');
   const [classesShiftId, setClassesShiftId] = useState<string>('ALL');
   const [classesCoachId, setClassesCoachId] = useState<string>('ALL');
-  const [classesSearchQuery, setClassesSearchQuery] = useState<string>('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
+  const [emailLogs, setEmailLogs] = useState<EmailNotificationLog[]>(() => {
+    try {
+      const saved = localStorage.getItem('badminton_email_logs_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('badminton_email_logs_v1', JSON.stringify(emailLogs));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [emailLogs]);
+
+  const clearEmailLogs = () => {
+    setEmailLogs([]);
+    try {
+      localStorage.removeItem('badminton_email_logs_v1');
+    } catch {}
+  };
   
   const [facilities, setFacilities] = useState<Facility[]>(INITIAL_FACILITIES);
   const [courts, setCourts] = useState<CourtInfo[]>(INITIAL_FACILITIES);
@@ -1127,6 +1153,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return null;
   }, [shifts, dailyCoachAssignments, sessions, facilities, classes]);
+
+  // Kiểm tra xem Huấn luyện viên có đăng ký đi dạy vào ngày dateStr hay không
+  const isCoachRegisteredForDate = useCallback((
+    coachId: string,
+    dateStr: string
+  ): boolean => {
+    if (!coachId || !dateStr) return false;
+
+    const coach = coaches.find(c => c.id === coachId || c.code === coachId);
+
+    // 1. Kiểm tra trường registeredDates trên HLV
+    if (coach?.registeredDates && coach.registeredDates.includes(dateStr)) {
+      return true;
+    }
+
+    // 2. Kiểm tra các buổi dạy trong sessions mà HLV này tự đăng ký (isCoachRegistered với SES-COACH- hoặc có registeredAt)
+    const hasRegisteredSession = sessions.some(s =>
+      s.date === dateStr &&
+      s.isCoachRegistered &&
+      (s.id.startsWith('SES-COACH-') || Boolean(s.registeredAt)) &&
+      (s.coachId === coachId || s.coachId === coach?.code || s.coachName === coach?.name || s.coaches?.some(c => c.id === coachId || c.code === coachId))
+    );
+    if (hasRegisteredSession) return true;
+
+    return false;
+  }, [coaches, sessions]);
 
   const addCoachToDailyClass = useCallback((classId: string, coachIdOrIds: string | string[], note?: string) => {
     if (currentUser.role === 'COACH') {
@@ -2247,6 +2299,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setSessions(prev => [newSession, ...prev]);
 
+    // Cập nhật danh sách ngày đăng ký đi dạy của HLV
+    setCoaches(prev => prev.map(c => {
+      if (c.id === coachId || c.code === coachId) {
+        const prevDates = c.registeredDates || [];
+        if (!prevDates.includes(params.date)) {
+          return { ...c, registeredDates: [...prevDates, params.date] };
+        }
+      }
+      return c;
+    }));
+
     // Create Admin notification
     const adminNotif: AdminNotification = {
       id: `REQ-COACH-${Date.now()}`,
@@ -2313,6 +2376,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : s
       )
     );
+
+    // Cập nhật danh sách ngày đăng ký đi dạy của HLV
+    if (targetSession.date) {
+      setCoaches(prev => prev.map(c => {
+        if (c.id === coachId || c.code === coachId) {
+          const prevDates = c.registeredDates || [];
+          if (!prevDates.includes(targetSession.date)) {
+            return { ...c, registeredDates: [...prevDates, targetSession.date] };
+          }
+        }
+        return c;
+      }));
+    }
 
     const shiftObj = targetSession.shiftId ? shifts.find(sh => sh.id === targetSession.shiftId) : null;
     const shiftDisplayName = shiftObj ? shiftObj.name : 'Ca học';
@@ -2429,7 +2505,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             coachAvatar: meta?.coachAvatar || s.coachAvatar,
             coaches: updatedCoaches,
             coachAttendanceDone: true,
-            coachAttendance: enrichedRecord
+            coachAttendance: enrichedRecord,
+            managerReviewed: currentUser.role === 'FACILITY_MANAGER' ? true : s.managerReviewed,
+            managerReviewedBy: currentUser.role === 'FACILITY_MANAGER' ? currentUser.name : s.managerReviewedBy,
+            managerReviewedAt: currentUser.role === 'FACILITY_MANAGER' ? nowStr : s.managerReviewedAt,
+            adminEdited: currentUser.role === 'ADMIN' ? true : s.adminEdited,
+            adminEditedBy: currentUser.role === 'ADMIN' ? currentUser.name : s.adminEditedBy,
+            adminEditedAt: currentUser.role === 'ADMIN' ? nowStr : s.adminEditedAt
           };
         }
         return s;
@@ -2880,7 +2962,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast(`Đã lưu điểm danh! Có mặt: ${presentCount} | Có phép: ${excusedCount} | Vắng: ${absentCount}`, 'success');
   };
 
-  // Save unified attendance for both students and coaches in one click
+  // Save unified attendance with 3-tier role workflow:
+  // 1. COACH: marks student attendance -> notifies Facility Manager & Admin
+  // 2. FACILITY_MANAGER: checks/adjusts student attendance & marks coach attendance -> finalizes session
+  // 3. ADMIN: reviews anytime and can edit/fix any mistakes with smart differential counter updates
   const saveUnifiedAttendance = (params: {
     sessionId: string;
     records: AttendanceRecordItem[];
@@ -2912,23 +2997,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const realToday = new Date().toISOString().split('T')[0];
     const isToday = date === systemToday || date === realToday;
     const isFuture = date > systemToday && date > realToday;
+    const isAdminUser = currentUser.role === 'ADMIN';
+    const isCoachUser = currentUser.role === 'COACH';
+    const isManagerUser = currentUser.role === 'FACILITY_MANAGER';
 
-    if (isFuture) {
+    if (isFuture && !isAdminUser) {
       showToast('Chưa đến ngày ca học! Không thể điểm danh trước ngày mai/tương lai (chỉ được phép thêm học bù).', 'warning');
       return;
     }
 
-    if (currentUser.role === 'COACH' && !isToday) {
+    if (isCoachUser && !isToday) {
       showToast('Huấn luyện viên không có quyền điểm danh/sửa những ngày khác hôm nay!', 'error');
       return;
     }
 
-    const existingSession = sessions.find(s => s.id === sessionId || (s.classId === classId && s.date === date));
-    if (existingSession?.attendanceDone && currentUser.role !== 'ADMIN') {
-      showToast('Điểm danh ca học này đã được xác nhận! HLV và Quản lý cơ sở không thể sửa lại, chỉ Admin mới có quyền cập nhật điểm danh.', 'warning');
+    const existingSession = sessions.find(
+      s => s.id === sessionId || (s.classId === classId && s.date === date && (!shiftId || s.shiftId === shiftId))
+    );
+
+    // If session has already been finalized by manager and user is coach or manager trying to edit past session
+    if (existingSession?.coachAttendanceDone && !isAdminUser && isCoachUser) {
+      showToast('Điểm danh ca học này đã được Quản lý cơ sở xác nhận và chốt! Chỉ Admin mới có quyền sửa đổi sai sót.', 'warning');
       return;
     }
-    if (currentUser.role === 'FACILITY_MANAGER' && !isToday) {
+
+    if (isManagerUser && !isToday && !existingSession) {
       showToast('Quản lý cơ sở chỉ có thể điểm danh trong ngày hôm nay!', 'error');
       return;
     }
@@ -2960,28 +3053,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Build enriched coach attendance records
     const enrichedCoachRecordsMap = new Map<string, CoachAttendanceRecord>();
-    coachRecords.forEach(cr => {
-      const coachDisplayName = cr.meta?.coachName || cr.coachName || 'Huấn luyện viên';
-      const enriched: CoachAttendanceRecord = {
-        coachId: cr.coachId,
-        coachName: coachDisplayName,
-        status: cr.status,
-        lateMinutes: cr.lateMinutes,
-        checkedBy: currentUser.name,
-        checkedByRole: currentUser.role,
-        checkedAt: nowStr
-      };
-      enrichedCoachRecordsMap.set(cr.sessionId, enriched);
-      enrichedCoachRecordsMap.set(cr.coachId, enriched);
-    });
+    if (!isCoachUser && coachRecords.length > 0) {
+      coachRecords.forEach(cr => {
+        const coachDisplayName = cr.meta?.coachName || cr.coachName || 'Huấn luyện viên';
+        const enriched: CoachAttendanceRecord = {
+          coachId: cr.coachId,
+          coachName: coachDisplayName,
+          status: cr.status,
+          lateMinutes: cr.lateMinutes,
+          checkedBy: currentUser.name,
+          checkedByRole: currentUser.role,
+          checkedAt: nowStr
+        };
+        enrichedCoachRecordsMap.set(cr.sessionId, enriched);
+        enrichedCoachRecordsMap.set(cr.coachId, enriched);
+      });
+    }
 
-    // 2. Update Sessions
+    // 2. Update Sessions in State
+    const primaryCoachEnriched = !isCoachUser
+      ? (enrichedCoachRecordsMap.get(sessionId) || (coachRecords[0] ? enrichedCoachRecordsMap.get(coachRecords[0].coachId) : undefined))
+      : undefined;
+
     setSessions(prev => {
       let updatedSessions = [...prev];
       const mainSessionExists = updatedSessions.some(
         s => s.id === sessionId || (s.classId === classId && s.date === date && (!shiftId || s.shiftId === shiftId))
       );
-      const primaryCoachEnriched = enrichedCoachRecordsMap.get(sessionId) || (coachRecords[0] ? enrichedCoachRecordsMap.get(coachRecords[0].coachId) : undefined);
 
       if (!mainSessionExists) {
         const targetClass = classes.find(c => c.id === classId);
@@ -3007,13 +3105,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           coachId: targetClass?.coachId || coachRecords[0]?.coachId || 'HLV001',
           coachName: targetClass?.coachName || coachRecords[0]?.coachName || 'Huấn luyện viên',
           coachAvatar: targetClass?.coachAvatar || coachRecords[0]?.meta?.coachAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-          status: 'Completed',
+          status: isCoachUser ? 'Upcoming' : 'Completed',
           attendanceDone: true,
-          attendedBy: currentUser.name,
-          attendedByRole: currentUser.role,
-          attendedAt: nowStr,
+          attendedBy: isCoachUser ? currentUser.name : (existingSession?.attendedBy || currentUser.name),
+          attendedByRole: isCoachUser ? 'COACH' : (existingSession?.attendedByRole || currentUser.role),
+          attendedAt: isCoachUser ? nowStr : (existingSession?.attendedAt || nowStr),
+          managerReviewed: isManagerUser || isAdminUser,
+          managerReviewedBy: isManagerUser ? currentUser.name : (isAdminUser ? 'Admin Hệ Thống' : undefined),
+          managerReviewedAt: (isManagerUser || isAdminUser) ? nowStr : undefined,
           coachAttendanceDone: Boolean(primaryCoachEnriched),
           coachAttendance: primaryCoachEnriched,
+          adminEdited: isAdminUser && Boolean(existingSession?.attendanceDone),
+          adminEditedBy: isAdminUser ? currentUser.name : undefined,
+          adminEditedAt: isAdminUser ? nowStr : undefined,
           totalStudents: sanitizedRecords.length,
           attendanceRecords: sanitizedRecords,
           makeupStudents: sanitizedRecords.filter(r => r.isMakeup)
@@ -3022,79 +3126,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         updatedSessions = updatedSessions.map(s => {
           if (s.id === sessionId || (s.classId === classId && s.date === date && (!shiftId || s.shiftId === shiftId))) {
-            const coachEnriched = enrichedCoachRecordsMap.get(s.id) || enrichedCoachRecordsMap.get(s.coachId) || primaryCoachEnriched;
+            const coachEnriched = enrichedCoachRecordsMap.get(s.id) || enrichedCoachRecordsMap.get(s.coachId) || primaryCoachEnriched || s.coachAttendance;
+            const isFirstCoachSubmit = isCoachUser && !s.attendanceDone;
+            const isManagerReviewing = isManagerUser || (isAdminUser && !s.managerReviewed);
+            const isAdminEditing = isAdminUser && (s.attendanceDone || s.coachAttendanceDone);
+
             return {
               ...s,
-              status: 'Completed',
+              status: isCoachUser && !s.coachAttendanceDone ? 'Upcoming' : 'Completed',
               attendanceDone: true,
-              attendedBy: currentUser.name,
-              attendedByRole: currentUser.role,
-              attendedAt: nowStr,
+              attendedBy: isFirstCoachSubmit ? currentUser.name : (s.attendedBy || currentUser.name),
+              attendedByRole: isFirstCoachSubmit ? 'COACH' : (s.attendedByRole || currentUser.role),
+              attendedAt: isFirstCoachSubmit ? nowStr : (s.attendedAt || nowStr),
+              managerReviewed: isManagerReviewing ? true : s.managerReviewed,
+              managerReviewedBy: isManagerReviewing ? currentUser.name : s.managerReviewedBy,
+              managerReviewedAt: isManagerReviewing ? nowStr : s.managerReviewedAt,
+              coachAttendanceDone: !isCoachUser ? (Boolean(coachEnriched) || s.coachAttendanceDone) : s.coachAttendanceDone,
+              coachAttendance: !isCoachUser && coachEnriched ? coachEnriched : s.coachAttendance,
+              adminEdited: isAdminEditing ? true : s.adminEdited,
+              adminEditedBy: isAdminEditing ? currentUser.name : s.adminEditedBy,
+              adminEditedAt: isAdminEditing ? nowStr : s.adminEditedAt,
               attendanceRecords: sanitizedRecords,
               makeupStudents: sanitizedRecords.filter(r => r.isMakeup),
-              ...(coachEnriched ? { coachAttendanceDone: true, coachAttendance: coachEnriched } : {})
+              totalStudents: sanitizedRecords.length
             };
           }
           return s;
         });
       }
 
-      // Ensure each coach item has a session marked coachAttendanceDone
-      coachRecords.forEach(cr => {
-        const enriched = enrichedCoachRecordsMap.get(cr.sessionId) || enrichedCoachRecordsMap.get(cr.coachId);
-        if (!enriched) return;
+      // If Facility Manager or Admin provided coach records, ensure each coach session is linked
+      if (!isCoachUser && coachRecords.length > 0) {
+        coachRecords.forEach(cr => {
+          const enriched = enrichedCoachRecordsMap.get(cr.sessionId) || enrichedCoachRecordsMap.get(cr.coachId);
+          if (!enriched) return;
 
-        const targetFacId = cr.meta?.facilityId || currentUser.facilityId;
-        const sessionIndex = updatedSessions.findIndex(
-          s => s.id === cr.sessionId || s.id === sessionId || (targetFacId && s.facilityId === targetFacId && s.date === date && (!shiftId || s.shiftId === shiftId))
-        );
-        if (sessionIndex >= 0) {
-          const existing = updatedSessions[sessionIndex];
-          const existingCoaches = existing.coaches || [];
-          const coachAlreadyInList = existingCoaches.some(c => c.id === cr.coachId);
-          const updatedCoaches = coachAlreadyInList
-            ? existingCoaches
-            : [...existingCoaches, { id: cr.coachId, name: cr.coachName, avatar: cr.meta?.coachAvatar } as Coach];
+          const targetFacId = cr.meta?.facilityId || currentUser.facilityId;
+          const sessionIndex = updatedSessions.findIndex(
+            s => s.id === cr.sessionId || s.id === sessionId || (targetFacId && s.facilityId === targetFacId && s.date === date && (!shiftId || s.shiftId === shiftId))
+          );
+          if (sessionIndex >= 0) {
+            const existing = updatedSessions[sessionIndex];
+            const existingCoaches = existing.coaches || [];
+            const coachAlreadyInList = existingCoaches.some(c => c.id === cr.coachId);
+            const updatedCoaches = coachAlreadyInList
+              ? existingCoaches
+              : [...existingCoaches, { id: cr.coachId, name: cr.coachName, avatar: cr.meta?.coachAvatar } as Coach];
 
-          updatedSessions[sessionIndex] = {
-            ...existing,
-            coaches: updatedCoaches,
-            coachAttendanceDone: true,
-            coachAttendance: enriched
-          };
-        } else {
-          const targetShift = shifts.find(s => s.id === shiftId);
-          const virtualSession: SessionSchedule = {
-            id: cr.sessionId,
-            classId: cr.meta?.classId || 'BD-B01',
-            className: cr.meta?.className || 'Ca tập cơ sở',
-            level: 'Beginner',
-            facilityId: targetFacId || 'CS01',
-            facilityName: cr.meta?.facilityName || currentUser.facilityName || 'Sân Cầu Lông',
-            date: cr.meta?.date || date,
-            dayOfWeek: 'Hôm nay',
-            shiftId: shiftId,
-            startTime: targetShift?.startTime || '18:00',
-            endTime: targetShift?.endTime || '19:30',
-            timeSlot: cr.meta?.timeSlot || (targetShift ? `${targetShift.startTime} — ${targetShift.endTime}` : '18:00 — 19:30'),
-            court: cr.meta?.court || 'Sân 01',
-            coachId: cr.coachId,
-            coachName: cr.coachName,
-            coachAvatar: cr.meta?.coachAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-            status: 'Completed',
-            attendanceDone: false,
-            coachAttendanceDone: true,
-            coachAttendance: enriched,
-            totalStudents: 0
-          };
-          updatedSessions = [virtualSession, ...updatedSessions];
-        }
-      });
+            updatedSessions[sessionIndex] = {
+              ...existing,
+              coaches: updatedCoaches,
+              coachAttendanceDone: true,
+              coachAttendance: enriched,
+              managerReviewed: isManagerUser ? true : existing.managerReviewed,
+              managerReviewedBy: isManagerUser ? currentUser.name : existing.managerReviewedBy,
+              managerReviewedAt: isManagerUser ? nowStr : existing.managerReviewedAt,
+              adminEdited: isAdminUser ? true : existing.adminEdited,
+              adminEditedBy: isAdminUser ? currentUser.name : existing.adminEditedBy,
+              adminEditedAt: isAdminUser ? nowStr : existing.adminEditedAt
+            };
+          }
+        });
+      }
 
       return updatedSessions;
     });
 
-    // 3. Update Students Session Counters, Leave calculations & Attendance History (Đồng bộ data tổng để đối soát)
+    // 3. Differential update of Students' session counters & attendance history
     const targetSessionObj = sessions.find(s => s.id === sessionId || (s.classId === classId && s.date === date && (!shiftId || s.shiftId === shiftId)));
     const targetClassObj = classes.find(c => c.id === classId);
     const effectiveFacilityId = targetSessionObj?.facilityId || targetClassObj?.facilityId || currentUser.facilityId || 'CS01';
@@ -3112,8 +3210,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!studentRecord) return student;
 
         const maxLeaves = student.allowedLeaves ?? Math.floor((student.packageSessions || 12) / 4);
-        const currentUsed = student.usedLeaves || 0;
         const isMakeup = Boolean(studentRecord.isMakeup);
+
+        // Previous attendance record in this specific session if already recorded
+        const prevSessionRecord = targetSessionObj?.attendanceRecords?.find(r => r.studentId === student.id);
+        const prevStatus = prevSessionRecord?.status;
+        const newStatus = studentRecord.status;
 
         const historyItem: StudentAttendanceHistoryItem = {
           id: `ATT-${Date.now()}-${student.id}-${Math.random().toString(36).substring(2, 7)}`,
@@ -3143,102 +3245,149 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         );
         const updatedHistory = [historyItem, ...prevHistory];
 
-        if (studentRecord.status === 'Present') {
-          const newAttended = student.attendedSessions + 1;
-          const newRemaining = Math.max(0, student.remainingSessions - 1);
-          const newStatus = newRemaining === 0 ? 'Expired' : student.status;
-          return {
-            ...student,
-            attendedSessions: newAttended,
-            remainingSessions: newRemaining,
-            status: newStatus,
-            lastAttended: date,
-            attendanceHistory: updatedHistory,
-            note: isMakeup
-              ? (student.note
-                  ? `${student.note} | [Học bù ${date}] Có mặt tại ${effectiveFacilityName} (${effectiveShiftName})`
-                  : `[Học bù ${date}] Có mặt tại ${effectiveFacilityName} (${effectiveShiftName})`)
-              : student.note
-          };
-        } else if (studentRecord.status === 'Excused') {
-          if (currentUsed < maxLeaves) {
+        let attendedDelta = 0;
+        let remainingDelta = 0;
+        let usedLeavesDelta = 0;
+
+        if (prevStatus) {
+          // Revert previous effect
+          if (prevStatus === 'Present') {
+            attendedDelta -= 1;
+            remainingDelta += 1;
+          } else if (prevStatus === 'Excused') {
+            usedLeavesDelta -= 1;
+          } else if (prevStatus === 'Absent') {
+            remainingDelta += 1;
+          }
+        }
+
+        // Apply new effect
+        if (newStatus === 'Present') {
+          attendedDelta += 1;
+          remainingDelta -= 1;
+        } else if (newStatus === 'Excused') {
+          usedLeavesDelta += 1;
+        } else if (newStatus === 'Absent') {
+          remainingDelta -= 1;
+        }
+
+        const newAttended = Math.max(0, student.attendedSessions + attendedDelta);
+        const newRemaining = Math.max(0, Math.min(student.packageSessions, student.remainingSessions + remainingDelta));
+        const newUsedLeaves = Math.max(0, Math.min(maxLeaves, (student.usedLeaves || 0) + usedLeavesDelta));
+        const newStudentStatus = newRemaining === 0 ? 'Expired' : (student.status === 'Expired' && newRemaining > 0 ? 'Studying' : student.status);
+
+        return {
+          ...student,
+          attendedSessions: newAttended,
+          remainingSessions: newRemaining,
+          usedLeaves: newUsedLeaves,
+          status: newStudentStatus,
+          lastAttended: newStatus === 'Present' ? date : student.lastAttended,
+          attendanceHistory: updatedHistory,
+          note: isMakeup
+            ? (student.note
+                ? `${student.note} | [Học bù ${date}] ${newStatus === 'Present' ? 'Có mặt' : newStatus === 'Excused' ? 'Có phép' : 'Vắng'} tại ${effectiveFacilityName}`
+                : `[Học bù ${date}] ${newStatus === 'Present' ? 'Có mặt' : newStatus === 'Excused' ? 'Có phép' : 'Vắng'} tại ${effectiveFacilityName}`)
+            : student.note
+        };
+      })
+    );
+
+    // 4. Update Coach stats (Taught Sessions / Hours)
+    if (!isCoachUser && coachRecords.length > 0) {
+      const targetClass = classes.find(c => c.id === classId);
+      setCoaches(prev =>
+        prev.map(coach => {
+          const coachRec = coachRecords.find(cr => cr.coachId === coach.id) ||
+            (targetClass && targetClass.coachId === coach.id ? coachRecords[0] : undefined);
+          
+          if (!coachRec) return coach;
+
+          const prevCoachStatus = targetSessionObj?.coachAttendance?.status;
+          const newCoachStatus = coachRec.status;
+
+          let sessionDelta = 0;
+          let hourDelta = 0;
+
+          if (prevCoachStatus && (prevCoachStatus === 'Present' || prevCoachStatus === 'Late')) {
+            sessionDelta -= 1;
+            hourDelta -= 1.5;
+          }
+
+          if (newCoachStatus === 'Present' || newCoachStatus === 'Late') {
+            sessionDelta += 1;
+            hourDelta += 1.5;
+          }
+
+          if (sessionDelta !== 0 || hourDelta !== 0) {
             return {
-              ...student,
-              usedLeaves: currentUsed + 1,
-              attendanceHistory: updatedHistory,
-              note: student.note
-                ? `${student.note} | Nghỉ có phép ngày ${date}${isMakeup ? ` (tại ${effectiveFacilityName})` : ''}`
-                : `Nghỉ có phép ngày ${date}${isMakeup ? ` (tại ${effectiveFacilityName})` : ''}`
-            };
-          } else {
-            const newRemaining = Math.max(0, student.remainingSessions - 1);
-            return {
-              ...student,
-              remainingSessions: newRemaining,
-              status: newRemaining === 0 ? 'Expired' : student.status,
-              attendanceHistory: updatedHistory,
-              note: student.note
-                ? `${student.note} | Vắng (hết phép tháng) ngày ${date}${isMakeup ? ` (tại ${effectiveFacilityName})` : ''}`
-                : `Vắng (hết phép) ngày ${date}${isMakeup ? ` (tại ${effectiveFacilityName})` : ''}`
+              ...coach,
+              taughtSessionsMonth: Math.max(0, coach.taughtSessionsMonth + sessionDelta),
+              taughtHoursMonth: Number(Math.max(0, coach.taughtHoursMonth + hourDelta).toFixed(1))
             };
           }
-        } else if (studentRecord.status === 'Absent') {
-          const newRemaining = Math.max(0, student.remainingSessions - 1);
-          return {
-            ...student,
-            remainingSessions: newRemaining,
-            status: newRemaining === 0 ? 'Expired' : student.status,
-            attendanceHistory: updatedHistory,
-            note: isMakeup
-              ? (student.note
-                  ? `${student.note} | [Học bù ${date}] Vắng tại ${effectiveFacilityName} (${effectiveShiftName})`
-                  : `[Học bù ${date}] Vắng tại ${effectiveFacilityName} (${effectiveShiftName})`)
-              : student.note
-          };
-        }
+          return coach;
+        })
+      );
+    }
 
-        return student;
-      })
-    );
-
-    // 4. Update Coach stats
-    const targetClass = classes.find(c => c.id === classId);
-    setCoaches(prev =>
-      prev.map(coach => {
-        const isMatched = (targetClass && coach.id === targetClass.coachId) || coachRecords.some(cr => cr.coachId === coach.id && cr.status === 'Present');
-        if (isMatched) {
-          return {
-            ...coach,
-            taughtSessionsMonth: coach.taughtSessionsMonth + 1,
-            taughtHoursMonth: Number((coach.taughtHoursMonth + 1.5).toFixed(1))
-          };
-        }
-        return coach;
-      })
-    );
-
-    // 5. Notification
-    const newNotif: NotificationItem = {
-      id: `NOTIF-${Date.now()}`,
-      title: 'Điểm danh hoàn tất',
-      message: `Đã duyệt điểm danh ngày ${date} (${sanitizedRecords.length} học viên${coachRecords.length > 0 ? `, ${coachRecords.length} HLV` : ''}).`,
-      time: 'Vừa xong',
-      read: false,
-      type: 'success',
-      linkTo: { tab: 'attendance', id: classId }
-    };
-    setNotifications(prev => [newNotif, ...prev]);
+    // 5. Create System Notifications according to role
+    if (isCoachUser) {
+      const coachNotif: NotificationItem = {
+        id: `NOTIF-${Date.now()}`,
+        title: 'HLV đã gửi điểm danh học viên',
+        message: `HLV ${currentUser.name} đã hoàn tất điểm danh học viên (${presentCount} Có mặt, ${excusedCount} Có phép, ${absentCount} Vắng) ca ${effectiveShiftName} tại ${effectiveFacilityName}. Quản lý cơ sở vui lòng kiểm tra và chấm công HLV.`,
+        time: 'Vừa xong',
+        read: false,
+        type: 'info',
+        linkTo: { tab: 'attendance', id: classId }
+      };
+      setNotifications(prev => [coachNotif, ...prev]);
+    } else if (isManagerUser) {
+      const managerNotif: NotificationItem = {
+        id: `NOTIF-${Date.now()}`,
+        title: 'QL cơ sở đã duyệt ca học & chấm công HLV',
+        message: `Quản lý cơ sở ${currentUser.name} đã kiểm tra học viên và chấm công HLV cho ca ${effectiveShiftName} ngày ${date} tại ${effectiveFacilityName}.`,
+        time: 'Vừa xong',
+        read: false,
+        type: 'success',
+        linkTo: { tab: 'attendance', id: classId }
+      };
+      setNotifications(prev => [managerNotif, ...prev]);
+    } else if (isAdminUser) {
+      const adminNotif: NotificationItem = {
+        id: `NOTIF-${Date.now()}`,
+        title: 'Admin đã cập nhật điểm danh',
+        message: `Admin ${currentUser.name} đã kiểm tra và sửa đổi thông tin điểm danh ca ${effectiveShiftName} ngày ${date} tại ${effectiveFacilityName}.`,
+        time: 'Vừa xong',
+        read: false,
+        type: 'warning',
+        linkTo: { tab: 'attendance', id: classId }
+      };
+      setNotifications(prev => [adminNotif, ...prev]);
+    }
 
     // 6. Confetti effect
     try {
       confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
     } catch {}
 
-    // 7. Toast
-    if (coachRecords.length > 0) {
-      showToast(`Đã duyệt điểm danh hoàn tất cho tất cả học viên (${sanitizedRecords.length}) và HLV (${coachRecords.length})!`, 'success');
+    // 7. Role-specific Toast Messages
+    if (isCoachUser) {
+      showToast(
+        `HLV ${currentUser.name} đã gửi điểm danh học viên thành công! (Có mặt: ${presentCount}, Có phép: ${excusedCount}, Vắng: ${absentCount}). Quản lý cơ sở sẽ kiểm tra và chấm công HLV.`,
+        'success'
+      );
+    } else if (isManagerUser) {
+      showToast(
+        `Quản lý cơ sở đã kiểm tra học viên (${sanitizedRecords.length} HV) và chấm công HLV (${coachRecords.length > 0 ? coachRecords.length : 1} HLV) thành công! Ca học đã được chốt.`,
+        'success'
+      );
     } else {
-      showToast(`Đã duyệt điểm danh hoàn tất cho tất cả ${sanitizedRecords.length} học viên!`, 'success');
+      showToast(
+        `Admin đã cập nhật và sửa sai sót điểm danh ca học thành công! (${sanitizedRecords.length} học viên${coachRecords.length > 0 ? `, ${coachRecords.length} HLV` : ''}).`,
+        'success'
+      );
     }
   };
 
@@ -3248,6 +3397,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     method: 'Chuyển khoản QR' | 'Tiền mặt' | 'Thẻ ngân hàng' | 'Ví MoMo' = 'Chuyển khoản QR',
     note?: string
   ) => {
+    const targetPayment = payments.find(p => p.id === paymentId);
+    if (!targetPayment) {
+      showToast('Không tìm thấy phiếu thu cần xác nhận!', 'error');
+      return;
+    }
+
+    // Role check: Facility Manager can only confirm payments for their assigned facility
+    if (currentUser.role === 'FACILITY_MANAGER' && currentUser.facilityId) {
+      const classObj = classes.find(c => c.id === targetPayment.classId);
+      const studentObj = students.find(s => s.id === targetPayment.studentId);
+      const paymentFacilityId =
+        targetPayment.facilityId ||
+        classObj?.facilityId ||
+        studentObj?.facilityId ||
+        studentObj?.scheduledSessions?.[0]?.facilityId;
+
+      if (paymentFacilityId && paymentFacilityId !== currentUser.facilityId) {
+        showToast('Bạn chỉ có quyền xác nhận thu tiền cho cơ sở do bạn quản lý!', 'error');
+        return;
+      }
+    }
+
     const todayStr = new Date().toLocaleDateString('vi-VN');
     let targetStudentId = '';
     let amountStr = '';
@@ -3315,6 +3486,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }) => {
     const nextNum = payments.length + 1;
     const todayStr = '28/08/2026';
+    const facId = currentUser.facilityId || (data.classId ? classes.find(c => c.id === data.classId)?.facilityId : undefined) || 'CS01';
+    const facName = currentUser.facilityName || facilities.find(f => f.id === facId)?.name || 'Triều Khúc';
+
     const newPayment: PaymentItem = {
       id: `PAY-${Date.now()}`,
       code: `PAY-2026-${String(nextNum).padStart(4, '0')}`,
@@ -3330,8 +3504,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'Paid',
       method: data.method,
       paymentType: data.paymentType,
-      facilityId: currentUser.facilityId || 'CS01',
-      facilityName: currentUser.facilityName || 'Cơ sở 1 - Cầu Giấy',
+      facilityId: facId,
+      facilityName: facName,
       collectorName: currentUser.name,
       note: data.note
     };
@@ -3710,6 +3884,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Create payment bill for the new month
     const nextNum = payments.length + 1;
+    const classObj = classes.find(c => c.id === student.classId);
+    const targetFacilityId =
+      student.facilityId ||
+      classObj?.facilityId ||
+      (currentUser.role === 'FACILITY_MANAGER' ? currentUser.facilityId : undefined) ||
+      'CS01';
+    const targetFacilityName =
+      student.facilityName ||
+      classObj?.facilityName ||
+      facilities.find(f => f.id === targetFacilityId)?.name ||
+      'Triều Khúc';
+
     const newPayment: PaymentItem = {
       id: `PAY-${Date.now()}`,
       code: `PAY-2026-${String(nextNum).padStart(4, '0')}`,
@@ -3722,6 +3908,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       month: monthStr,
       dueDate: startDate ? startDate.split('-').reverse().join('/') : '05/09/2026',
       status: 'Unpaid',
+      paymentType: 'Tuition',
+      facilityId: targetFacilityId,
+      facilityName: targetFacilityName,
       note: `Gia hạn ${monthStr}: Đăng ký ${newPackageSessions} buổi (${calculatedFee.toLocaleString('vi-VN')}đ) + Cộng dồn ${carriedOver} buổi tháng trước`
     };
     setPayments(prev => [newPayment, ...prev]);
@@ -3930,31 +4119,82 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Kênh Chat Chung Actions
   const sendChatMessage = (content: string, isNotice: boolean = false) => {
+    // 1. Phân quyền: Huấn luyện viên chỉ có quyền react, không được gửi tin nhắn
+    if (currentUser.role === 'COACH') {
+      showToast('Huấn luyện viên chỉ có quyền thả cảm xúc (react) tin nhắn, không được gửi tin nhắn vào Kênh Trao Đổi!', 'error');
+      return;
+    }
+
     if (!content.trim()) return;
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} - Hôm nay`;
+    const fullDateStr = `${now.toLocaleDateString('vi-VN')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-    // Phát hiện tag tên người dùng hoặc tag tất cả
+    // 2. Phát hiện tag tên người dùng hoặc tag theo nhóm/tất cả
+    const lowerContent = content.toLowerCase();
     const isAllMentioned =
+      lowerContent.includes('@tất cả') ||
+      lowerContent.includes('@mọi người') ||
       content.includes('@Tất cả') ||
-      content.toLowerCase().includes('@tất cả') ||
-      content.toLowerCase().includes('@mọi người');
+      content.includes('@Mọi người');
 
-    const mentionedUsers = systemUsers.filter(u => {
-      if (u.id === currentUser.id) return false;
+    const isAdminsMentioned = lowerContent.includes('@admin') || lowerContent.includes('@ban quản trị');
+    const isManagersMentioned = lowerContent.includes('@quản lý') || lowerContent.includes('@ql') || lowerContent.includes('@quản lý cơ sở');
+    const isCoachesMentioned = lowerContent.includes('@hlv') || lowerContent.includes('@huấn luyện viên');
+
+    const mentionedMap = new Map<string, UserProfile>();
+
+    systemUsers.forEach(u => {
+      if (u.id === currentUser.id) return;
       const cleanName = u.name.trim();
-      return (
+      const lowerName = cleanName.toLowerCase();
+
+      if (
+        isAllMentioned ||
+        (isAdminsMentioned && u.role === 'ADMIN') ||
+        (isManagersMentioned && u.role === 'FACILITY_MANAGER') ||
+        (isCoachesMentioned && u.role === 'COACH') ||
         content.includes(`@${cleanName}`) ||
-        content.toLowerCase().includes(`@${cleanName.toLowerCase()}`)
-      );
+        lowerContent.includes(`@${lowerName}`)
+      ) {
+        mentionedMap.set(u.id, u);
+      }
     });
 
-    const targetUsersToNotify = isAllMentioned
-      ? systemUsers.filter(u => u.id !== currentUser.id)
-      : mentionedUsers;
+    // Bổ sung các HLV từ danh sách coaches nếu chưa có trong systemUsers
+    (coaches || []).forEach(c => {
+      const coachUserId = `user_coach_${c.id.toLowerCase()}`;
+      if (coachUserId === currentUser.id) return;
+      const cleanName = c.name.trim();
+      const lowerName = cleanName.toLowerCase();
 
+      if (
+        isAllMentioned ||
+        isCoachesMentioned ||
+        content.includes(`@${cleanName}`) ||
+        lowerContent.includes(`@${lowerName}`)
+      ) {
+        if (!mentionedMap.has(coachUserId) && !Array.from(mentionedMap.values()).some(u => u.name === c.name)) {
+          mentionedMap.set(coachUserId, {
+            id: coachUserId,
+            name: c.name,
+            role: 'COACH',
+            coachId: c.id,
+            email: c.email || `${c.name.toLowerCase().replace(/\s+/g, '')}.coach@smashzone.vn`,
+            phone: c.phone,
+            avatar: c.avatar,
+            title: `HLV ${c.name} (${c.specialty || 'Huấn luyện viên'})`
+          });
+        }
+      }
+    });
+
+    const targetUsersToNotify = Array.from(mentionedMap.values());
+    const targetEmails = targetUsersToNotify.map(u => u.email).filter(Boolean) as string[];
+
+    const msgId = `msg-${Date.now()}`;
     const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
+      id: msgId,
       senderId: currentUser.id,
       senderName: currentUser.name,
       senderRole: currentUser.role,
@@ -3965,16 +4205,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: Date.now(),
       isNotice,
       reactions: [],
-      mentions: targetUsersToNotify.map(u => u.id)
+      mentions: targetUsersToNotify.map(u => u.id),
+      mentionsEmails: targetEmails,
+      emailNotified: targetEmails.length > 0
     };
 
     setChatMessages(prev => [...prev, newMsg]);
 
-    // Tạo thông báo đến người được nhắc tên
+    // 3. Tự động gửi Email thông báo và tạo In-app Notification khi có người được tag tên (@)
     if (targetUsersToNotify.length > 0) {
+      // In-app notifications
       const newNotifs: NotificationItem[] = targetUsersToNotify.map(targetUser => ({
         id: `NOTIF-CHAT-MENTION-${Date.now()}-${targetUser.id}`,
-        title: `💬 ${currentUser.name} đã nhắc tên bạn trong Chat`,
+        title: `💬 ${currentUser.name} đã nhắc tên bạn trong Kênh Trao Đổi`,
         message: content.trim(),
         time: 'Vừa xong',
         read: false,
@@ -3984,14 +4227,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         linkTo: { tab: 'chat' }
       }));
       setNotifications(prev => [...newNotifs, ...prev]);
-      showToast(
-        isAllMentioned
-          ? 'Đã gửi tin nhắn (Đã tag @Tất cả nhân sự)!'
-          : `Đã gửi tin nhắn (Đã tag ${targetUsersToNotify.map(u => u.name).join(', ')})!`,
-        'success'
-      );
+
+      // Tạo nhật ký gửi email thông báo tự động (Email Notification Logs)
+      const newEmailLogs: EmailNotificationLog[] = targetUsersToNotify.map(targetUser => {
+        const recipientEmail = targetUser.email || (targetUser.coachId ? coaches.find(c => c.id === targetUser.coachId)?.email : undefined) || 'user@smashzone.vn';
+        return {
+          id: `EMAIL-${Date.now()}-${targetUser.id}`,
+          recipientEmail,
+          recipientName: targetUser.name,
+          recipientRole: targetUser.role,
+          subject: `[SmashZone Chat] 🏸 ${currentUser.name} đã nhắc tên bạn trong Kênh Trao Đổi Chung`,
+          content: content.trim(),
+          sentAt: fullDateStr,
+          status: 'Sent',
+          senderName: currentUser.name,
+          senderRole: currentUser.role,
+          messageId: msgId
+        };
+      });
+
+      setEmailLogs(prev => [...newEmailLogs, ...prev]);
+
+      // Hiển thị Toast thông báo xác nhận gửi email tự động
+      if (isAllMentioned) {
+        showToast(`💬 Đã gửi tin nhắn & tự động gửi email thông báo tới toàn thể ${targetUsersToNotify.length} nhân sự!`, 'success');
+      } else if (targetUsersToNotify.length === 1) {
+        showToast(`💬 Đã gửi tin nhắn & gửi email thông báo tới: ${targetUsersToNotify[0].name} (${targetUsersToNotify[0].email})!`, 'success');
+      } else {
+        const emailList = targetUsersToNotify.map(u => u.name).join(', ');
+        showToast(`💬 Đã gửi tin nhắn & gửi email thông báo tới ${targetUsersToNotify.length} nhân sự (${emailList})!`, 'success');
+      }
     } else {
-      showToast('Đã gửi tin nhắn đến Kênh Chat Chung!', 'success');
+      showToast('Đã gửi tin nhắn đến Kênh Trao Đổi Chung!', 'success');
     }
   };
 
@@ -4125,6 +4392,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         sendChatMessage,
         toggleChatReaction,
         deleteChatMessage,
+        emailLogs,
+        clearEmailLogs,
         toasts,
         showToast,
         removeToast,
@@ -4150,6 +4419,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         removeCoachFromDailyClass,
         assignCoachToDailyClass,
         checkCoachShiftConflict,
+        isCoachRegisteredForDate,
         getDailyClasses,
         getClassById,
         holidays,

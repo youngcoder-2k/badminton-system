@@ -42,6 +42,7 @@ export const ClassesView: React.FC = () => {
     addCoachToDailyClass,
     removeCoachFromDailyClass,
     checkCoachShiftConflict,
+    isCoachRegisteredForDate,
     updateDailyClassNote,
     holidays,
     declareHoliday,
@@ -390,12 +391,12 @@ export const ClassesView: React.FC = () => {
     return dailyClasses.find(c => c.id === selectedClassForCoach.id) || selectedClassForCoach;
   }, [selectedClassForCoach, dailyClasses]);
 
-  // Available coaches to add (those not already assigned to this class)
+  // Available coaches to add (coaches who registered to teach on selectedDate and not already assigned to this class)
   const availableCoachesToAdd = useMemo(() => {
     if (!currentModalClass) return [];
     const assignedIds = currentModalClass.coachIds || (currentModalClass.coachId ? [currentModalClass.coachId] : []);
-    return coaches.filter(c => !assignedIds.includes(c.id));
-  }, [currentModalClass, coaches]);
+    return coaches.filter(c => !assignedIds.includes(c.id) && isCoachRegisteredForDate(c.id, selectedDate));
+  }, [currentModalClass, coaches, selectedDate, isCoachRegisteredForDate]);
 
   // Coaches eligible to be selected (available AND no cross-facility conflict for this shift)
   const selectableCoachesToAdd = useMemo(() => {
@@ -1395,7 +1396,7 @@ export const ClassesView: React.FC = () => {
           <div className="space-y-3 pt-3 border-t border-slate-100">
             <div className="flex items-center justify-between">
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Thêm Huấn Luyện Viên Mới Vào Ca
+                Thêm Huấn Luyện Viên Mới Vào Ca ({availableCoachesToAdd.length})
               </label>
               {selectableCoachesToAdd.length > 1 && (
                 <button
@@ -1411,8 +1412,8 @@ export const ClassesView: React.FC = () => {
             </div>
 
             {availableCoachesToAdd.length === 0 ? (
-              <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-500 italic text-center">
-                Tất cả Huấn luyện viên trong hệ thống đã được thêm vào ca học này.
+              <div className="p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center text-xs text-slate-500">
+                Không có Huấn luyện viên nào khác đăng ký đi dạy vào ngày {formatDateVi(selectedDate)}.
               </div>
             ) : (
               <div className="space-y-3">

@@ -207,6 +207,7 @@ export interface Coach {
   taughtSessionsMonth: number;
   taughtHoursMonth: number;
   totalStudents: number;
+  registeredDates?: string[]; // Danh sách các ngày HLV đã đăng ký đi dạy ('YYYY-MM-DD')
 }
 
 export type SessionStatus = 'Upcoming' | 'Ongoing' | 'Completed';
@@ -258,9 +259,16 @@ export interface SessionSchedule {
   attendedBy?: string; // Tên người đã điểm danh học viên (VD: HLV Nguyễn Minh Anh)
   attendedByRole?: UserRole; // 'COACH' | 'FACILITY_MANAGER' | 'ADMIN'
   attendedAt?: string;
+  managerReviewed?: boolean; // Quản lý cơ sở đã kiểm tra & xác nhận
+  managerReviewedBy?: string; // Tên Quản lý cơ sở
+  managerReviewedAt?: string; // Thời gian Quản lý cơ sở duyệt
   coachAttendanceDone?: boolean; // Quản lý sân / Admin đã chấm công HLV
-  totalStudents: number;
   coachAttendance?: CoachAttendanceRecord;
+  adminEdited?: boolean; // Admin đã kiểm tra và chỉnh sửa sai sót
+  adminEditedBy?: string; // Tên Admin sửa
+  adminEditedAt?: string; // Thời gian Admin sửa
+  adminNote?: string; // Ghi chú chỉnh sửa của Admin
+  totalStudents: number;
   attendanceRecords?: AttendanceRecordItem[];
   makeupStudents?: AttendanceRecordItem[]; // Học viên học bù thêm vào ca
   coaches?: Coach[];
@@ -339,8 +347,8 @@ export interface AdminNotification {
 
 // Kênh Chat Chung Toàn Hệ Thống (Admin, Quản lý cơ sở, HLV)
 export interface ChatReaction {
-  emoji: string; // '✅', '👍', '🏸', '❤️'
-  label: string; // 'Đã xác nhận', 'Đã rõ', 'Sẵn sàng'
+  emoji: string; // '✅', '👍', '🏸', '❤️', '🔥', '👏', '🙏'
+  label: string; // 'Đã xác nhận', 'Thích', 'Yêu thích', 'Tuyệt vời', 'Hoan hô', 'Cảm ơn'
   userId: string;
   userName: string;
   userRole: UserRole;
@@ -361,6 +369,23 @@ export interface ChatMessage {
   isNotice?: boolean; // Yêu cầu xác nhận / Thông báo quan trọng
   reactions: ChatReaction[];
   mentions?: string[]; // Danh sách userId hoặc userName được tag
+  mentionsEmails?: string[]; // Danh sách email đã được gửi thông báo tự động
+  emailNotified?: boolean; // Đã gửi thông báo qua email cho người được tag
+}
+
+// Nhật ký gửi email thông báo khi được tag tên (@)
+export interface EmailNotificationLog {
+  id: string;
+  recipientEmail: string;
+  recipientName: string;
+  recipientRole?: UserRole | string;
+  subject: string;
+  content: string;
+  sentAt: string;
+  status: 'Sent' | 'Delivered';
+  senderName: string;
+  senderRole?: UserRole | string;
+  messageId?: string;
 }
 
 // Ngày nghỉ lễ trung tâm (Holiday / Center Closure)

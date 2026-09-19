@@ -739,19 +739,19 @@ export const StudentsView: React.FC = () => {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 w-full lg:w-auto flex-nowrap">
           {/* Facility Filter - Hidden for Facility Manager */}
           {currentUser.role !== 'FACILITY_MANAGER' && (
             <select
               value={selectedFacility}
               onChange={e => setSelectedFacility(e.target.value)}
               aria-label="Lọc theo cơ sở"
-              className="px-3 py-1.5 bg-slate-50 text-xs font-semibold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer"
+              className="flex-1 lg:flex-initial min-w-0 px-2 sm:px-3 py-1.5 bg-slate-50 text-[11px] sm:text-xs font-semibold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer truncate"
             >
               <option value="ALL">Tất cả cơ sở</option>
               {facilities.map(f => (
                 <option key={f.id} value={f.id}>
-                  {f.name}
+                  {formatCleanFacilityName(f.name)}
                 </option>
               ))}
             </select>
@@ -762,7 +762,7 @@ export const StudentsView: React.FC = () => {
               value={selectedPayment}
               onChange={e => setSelectedPayment(e.target.value)}
               aria-label="Lọc theo học phí"
-              className="px-3 py-1.5 bg-slate-50 text-xs font-semibold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer"
+              className="flex-1 lg:flex-initial min-w-0 px-2 sm:px-3 py-1.5 bg-slate-50 text-[11px] sm:text-xs font-semibold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer truncate"
             >
               <option value="ALL">Tất cả học phí</option>
               <option value="Paid">Đã đóng</option>
@@ -775,7 +775,7 @@ export const StudentsView: React.FC = () => {
             value={selectedStatus}
             onChange={e => setSelectedStatus(e.target.value)}
             aria-label="Lọc theo trạng thái học viên"
-            className="px-3 py-1.5 bg-slate-50 text-xs font-semibold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer"
+            className="flex-1 lg:flex-initial min-w-0 px-2 sm:px-3 py-1.5 bg-slate-50 text-[11px] sm:text-xs font-semibold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer truncate"
           >
             <option value="ALL">Tất cả trạng thái</option>
             <option value="Studying">Đang học</option>

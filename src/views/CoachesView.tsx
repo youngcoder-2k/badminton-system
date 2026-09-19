@@ -10,7 +10,8 @@ import {
   Clock,
   XCircle,
   CalendarPlus,
-  MapPin
+  MapPin,
+  Mail
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Modal } from '../components/common/Modal';
@@ -407,13 +408,14 @@ export const CoachRegisteredShiftsPanel: React.FC<CoachRegisteredShiftsPanelProp
 };
 
 export const CoachesView: React.FC = () => {
-  const { coaches, classes, facilities, shifts, sessions, addCoach, isCoach, showToast, currentUser, navigate } = useApp();
+  const { coaches, classes, facilities, shifts, sessions, addCoach, isCoach, showToast, currentUser, navigate, systemUsers } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  // New Coach form (Chỉ giữ Tên & SĐT)
+  // New Coach form (Tên, Email đăng nhập & SĐT)
   const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
 
   // Modal Chi Tiết Ca Dạy (cho Admin xem từng HLV)
@@ -429,12 +431,32 @@ export const CoachesView: React.FC = () => {
   const filteredCoaches = coaches.filter(
     c =>
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.phone.includes(searchQuery)
+      c.phone.includes(searchQuery) ||
+      (c.email && c.email.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   const handleCreateCoach = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim() || !newPhone.trim()) return;
+    if (!newName.trim() || !newPhone.trim() || !newEmail.trim()) {
+      showToast('Vui lòng nhập đầy đủ họ tên, email đăng nhập và số điện thoại!', 'error');
+      return;
+    }
+
+    const cleanEmail = newEmail.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      showToast('Địa chỉ email không đúng định dạng (VD: hlv.nam@smashzone.vn)!', 'error');
+      return;
+    }
+
+    // Kiểm tra trùng email trong hệ thống
+    const isEmailTaken = coaches.some(c => c.email.toLowerCase() === cleanEmail) ||
+      systemUsers.some(u => u.email?.toLowerCase() === cleanEmail);
+
+    if (isEmailTaken) {
+      showToast(`Email "${cleanEmail}" đã được sử dụng! Vui lòng chọn email khác.`, 'error');
+      return;
+    }
 
     const fac = facilities[0];
     const sh = shifts[0];
@@ -442,7 +464,7 @@ export const CoachesView: React.FC = () => {
     addCoach({
       name: newName.trim(),
       phone: newPhone.trim(),
-      email: `${newName.trim().toLowerCase().replace(/\s+/g, '')}@smashzone.vn`,
+      email: cleanEmail,
       avatar: `https://images.unsplash.com/photo-${1530000000000 + Math.floor(Math.random() * 100000)}?w=150&auto=format&fit=crop&q=80`,
       specialty: 'Kỹ thuật cơ bản & Di chuyển',
       experience: '5 năm kinh nghiệm',
@@ -460,8 +482,8 @@ export const CoachesView: React.FC = () => {
 
     setIsAddModalOpen(false);
     setNewName('');
+    setNewEmail('');
     setNewPhone('');
-    showToast('Thêm huấn luyện viên mới thành công!', 'success');
   };
 
   // NẾU LÀ TÀI KHOẢN HLV: HIỂN THỊ TRỰC TIẾP MÀN HÌNH "LỊCH CA DẠY ĐÃ ĐĂNG KÝ" CỦA CHÍNH MÌNH
@@ -579,13 +601,24 @@ export const CoachesView: React.FC = () => {
                       {coach.name}
                     </h3>
 
-                    <a
-                      href={`tel:${coach.phone}`}
-                      className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-emerald-600 font-semibold mt-1 transition-colors"
-                    >
-                      <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>{coach.phone}</span>
-                    </a>
+                    <div className="flex flex-col gap-0.5 mt-1">
+                      <a
+                        href={`tel:${coach.phone}`}
+                        className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-emerald-600 font-semibold transition-colors"
+                      >
+                        <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>{coach.phone}</span>
+                      </a>
+                      {coach.email && (
+                        <div
+                          className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 font-medium truncate"
+                          title={`Email đăng nhập: ${coach.email}`}
+                        >
+                          <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span className="truncate">{coach.email}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -657,12 +690,17 @@ export const CoachesView: React.FC = () => {
         </Modal>
       )}
 
-      {/* Add Coach Modal - Chỉ còn Tên và Số điện thoại */}
+      {/* Add Coach Modal */}
       <Modal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setNewName('');
+          setNewEmail('');
+          setNewPhone('');
+        }}
         title="Thêm Huấn Luyện Viên Mới"
-        subtitle="Nhập họ tên và số điện thoại huấn luyện viên"
+        subtitle="Nhập thông tin cá nhân và email đăng nhập cho HLV"
         maxWidth="md"
       >
         <form onSubmit={handleCreateCoach} className="space-y-4">
@@ -676,6 +714,21 @@ export const CoachesView: React.FC = () => {
               value={newName}
               onChange={e => setNewName(e.target.value)}
               placeholder="VD: Nguyễn Văn A"
+              className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 bg-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+              <span>Email đăng nhập <span className="text-red-500">*</span></span>
+              <span className="text-[11px] font-normal text-slate-400">Dùng để login vào hệ thống</span>
+            </label>
+            <input
+              type="email"
+              required
+              value={newEmail}
+              onChange={e => setNewEmail(e.target.value)}
+              placeholder="VD: vana.coach@smashzone.vn"
               className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 bg-white"
             />
           </div>
@@ -697,7 +750,12 @@ export const CoachesView: React.FC = () => {
           <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
             <button
               type="button"
-              onClick={() => setIsAddModalOpen(false)}
+              onClick={() => {
+                setIsAddModalOpen(false);
+                setNewName('');
+                setNewEmail('');
+                setNewPhone('');
+              }}
               className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer transition-colors"
             >
               Hủy

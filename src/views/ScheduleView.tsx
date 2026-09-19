@@ -793,14 +793,14 @@ export const ScheduleView: React.FC = () => {
           <span>Tuần 35 (24/08 — 30/08/2026)</span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto flex-nowrap">
           {/* Sân Cầu Lông Filter - Chỉ Admin mới có quyền chọn tất cả sân cầu lông */}
           {currentUser.role === 'ADMIN' && (
             <select
               value={selectedFacility}
               onChange={e => setSelectedFacility(e.target.value)}
               aria-label="Lọc theo cơ sở"
-              className="px-3 py-1.5 bg-slate-50 text-xs font-semibold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer"
+              className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-3 py-1.5 bg-slate-50 text-[11px] sm:text-xs font-semibold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer truncate"
             >
               <option value="ALL">Tất cả cơ sở</option>
               {facilities.map(f => (
@@ -816,7 +816,7 @@ export const ScheduleView: React.FC = () => {
             value={selectedShift}
             onChange={e => setSelectedShift(e.target.value)}
             aria-label="Lọc theo ca học"
-            className="px-3 py-1.5 bg-slate-50 text-xs font-semibold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer"
+            className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-3 py-1.5 bg-slate-50 text-[11px] sm:text-xs font-semibold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer truncate"
           >
             <option value="ALL">Tất cả ca học</option>
             {shifts.map(s => (
@@ -832,7 +832,7 @@ export const ScheduleView: React.FC = () => {
               value={selectedCoach}
               onChange={e => setSelectedCoach(e.target.value)}
               aria-label="Lọc theo HLV"
-              className="px-3 py-1.5 bg-slate-50 text-xs font-semibold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer"
+              className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-3 py-1.5 bg-slate-50 text-[11px] sm:text-xs font-semibold text-slate-700 rounded-xl border border-slate-200 outline-none focus:border-[#10B981] cursor-pointer truncate"
             >
               <option value="ALL">{currentUser.role === 'ADMIN' ? 'Tất cả HLV' : 'Tất cả HLV tại sân'}</option>
               {availableCoaches.map(c => (
@@ -849,11 +849,8 @@ export const ScheduleView: React.FC = () => {
       {viewMode === 'weekly' && (
         <div className="bg-white rounded-3xl border border-slate-100 shadow-xs overflow-hidden">
           {/* Mobile Swipe Guidance Bar */}
-          <div className="sm:hidden flex items-center justify-between px-4 py-2 bg-slate-50/80 border-b border-slate-100 text-xs">
+          <div className="sm:hidden flex items-center px-4 py-2 bg-slate-50/80 border-b border-slate-100 text-xs">
             <span className="text-slate-500 font-medium">👉 Vuốt ngang để xem tiếp các ngày trong tuần</span>
-            <span className="font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 text-[11px]">
-              2 ngày / màn hình
-            </span>
           </div>
 
           <div className="overflow-x-auto no-scrollbar snap-x snap-mandatory">

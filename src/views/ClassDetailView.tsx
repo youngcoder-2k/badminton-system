@@ -52,6 +52,7 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
     addCoachToDailyClass,
     removeCoachFromDailyClass,
     checkCoachShiftConflict,
+    isCoachRegisteredForDate,
     addStudentsToDailyClass,
     removeStudentFromDailyClass,
     addMakeupStudentToSession,
@@ -350,8 +351,8 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
   }, [classCoaches]);
 
   const availableCoachesToAdd = useMemo(() => {
-    return coaches.filter(c => !assignedCoachIdSet.has(c.id));
-  }, [coaches, assignedCoachIdSet]);
+    return coaches.filter(c => !assignedCoachIdSet.has(c.id) && isCoachRegisteredForDate(c.id, classDate));
+  }, [coaches, assignedCoachIdSet, classDate, isCoachRegisteredForDate]);
 
   const selectableCoachesToAdd = useMemo(() => {
     return availableCoachesToAdd.filter(c => !checkCoachShiftConflict(c.id, currentClass.id));
@@ -2006,7 +2007,7 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
           {/* Coach List */}
           {availableCoachesToAdd.length === 0 ? (
             <div className="p-6 bg-slate-50 rounded-2xl text-center text-xs sm:text-sm text-slate-500 border border-dashed border-slate-200">
-              Tất cả Huấn luyện viên trong hệ thống đã được phân công vào ca học này.
+              Không có Huấn luyện viên nào khác đăng ký đi dạy vào ngày {classDate.split('-').reverse().join('/')}.
             </div>
           ) : filteredAvailableCoaches.length === 0 ? (
             <div className="p-6 bg-slate-50 rounded-2xl text-center text-xs sm:text-sm text-slate-500 border border-dashed border-slate-200">

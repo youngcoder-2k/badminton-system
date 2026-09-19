@@ -121,6 +121,39 @@ export const INITIAL_USERS: UserProfile[] = [
     title: 'Quản lý Cơ sở Triều Khúc'
   },
   {
+    id: 'user_manager_2',
+    name: 'Vũ Đức Thịnh',
+    role: 'FACILITY_MANAGER',
+    facilityId: 'CS02',
+    facilityName: 'Cầu Giấy',
+    email: 'ducthinh.manager@smashzone.vn',
+    phone: '0988 123 456',
+    avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&auto=format&fit=crop&q=80',
+    title: 'Quản lý Cơ sở Cầu Giấy'
+  },
+  {
+    id: 'user_manager_3',
+    name: 'Nguyễn Văn Hùng',
+    role: 'FACILITY_MANAGER',
+    facilityId: 'CS03',
+    facilityName: 'Mỹ Đình',
+    email: 'vanhung.manager@smashzone.vn',
+    phone: '0912 345 678',
+    avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80',
+    title: 'Quản lý Cơ sở Mỹ Đình'
+  },
+  {
+    id: 'user_manager_4',
+    name: 'Phạm Đức Long',
+    role: 'FACILITY_MANAGER',
+    facilityId: 'CS04',
+    facilityName: 'Phú Đô',
+    email: 'duclong.manager@smashzone.vn',
+    phone: '0977 888 999',
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
+    title: 'Quản lý Cơ sở Phú Đô'
+  },
+  {
     id: 'user_coach_1',
     name: 'Nguyễn Minh Anh',
     role: 'COACH',
@@ -149,6 +182,26 @@ export const INITIAL_USERS: UserProfile[] = [
     phone: '0977 889 900',
     avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80',
     title: 'HLV Chuyên Sức Bền & Thi Đấu'
+  },
+  {
+    id: 'user_coach_4',
+    name: 'Phạm Đức Long',
+    role: 'COACH',
+    coachId: 'HLV004',
+    email: 'duclong.coach@smashzone.vn',
+    phone: '0934 556 778',
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
+    title: 'HLV Nhập Môn & Lớp Gia Đình'
+  },
+  {
+    id: 'user_coach_5',
+    name: 'Đỗ Minh Tuấn',
+    role: 'COACH',
+    coachId: 'HLV005',
+    email: 'minhtuan.coach@smashzone.vn',
+    phone: '0981 223 445',
+    avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=150&auto=format&fit=crop&q=80',
+    title: 'HLV Kỹ Thuật Phông Cầu & Cắt Cầu'
   }
 ];
 
@@ -173,7 +226,8 @@ export const INITIAL_COACHES: Coach[] = [
     hourlyRate: 350000,
     taughtSessionsMonth: 28,
     taughtHoursMonth: 42,
-    totalStudents: 24
+    totalStudents: 24,
+    registeredDates: ['2026-08-28', '2026-08-29', '2026-08-30']
   },
   {
     id: 'HLV002',
@@ -195,7 +249,8 @@ export const INITIAL_COACHES: Coach[] = [
     hourlyRate: 380000,
     taughtSessionsMonth: 24,
     taughtHoursMonth: 36,
-    totalStudents: 22
+    totalStudents: 22,
+    registeredDates: ['2026-08-29', '2026-08-30']
   },
   {
     id: 'HLV003',
@@ -217,7 +272,8 @@ export const INITIAL_COACHES: Coach[] = [
     hourlyRate: 400000,
     taughtSessionsMonth: 20,
     taughtHoursMonth: 30,
-    totalStudents: 14
+    totalStudents: 14,
+    registeredDates: ['2026-08-28', '2026-08-31']
   },
   {
     id: 'HLV004',
@@ -239,7 +295,8 @@ export const INITIAL_COACHES: Coach[] = [
     hourlyRate: 320000,
     taughtSessionsMonth: 22,
     taughtHoursMonth: 33,
-    totalStudents: 15
+    totalStudents: 15,
+    registeredDates: ['2026-08-29', '2026-08-31']
   },
   {
     id: 'HLV005',
@@ -261,7 +318,8 @@ export const INITIAL_COACHES: Coach[] = [
     hourlyRate: 300000,
     taughtSessionsMonth: 16,
     taughtHoursMonth: 24,
-    totalStudents: 10
+    totalStudents: 10,
+    registeredDates: ['2026-08-30', '2026-08-31']
   }
 ];
 
@@ -1112,6 +1170,32 @@ const generateInitialSessions = (): SessionSchedule[] => {
             ? 'SES-2026-0828-04'
             : `SES-${dateStr}-${cfg.coachId}-${clsIdx + 1}`;
 
+          const isSampleCoachAttendedToday = isToday && cfg.coachId === 'HLV001' && cls.classId === 'BD-B01';
+          const isSampleManagerReviewedToday = isToday && cfg.coachId === 'HLV004';
+
+          const sampleStudentRecords: AttendanceRecordItem[] = isSampleCoachAttendedToday
+            ? [
+                { studentId: 'HV001', studentName: 'Trần Minh Quân', status: 'Present' },
+                { studentId: 'HV002', studentName: 'Nguyễn Hoàng Anh', status: 'Present' },
+                { studentId: 'HV003', studentName: 'Lê Minh Đức', status: 'Present' },
+                { studentId: 'HV004', studentName: 'Phạm Phương Linh', status: 'Present' },
+                { studentId: 'HV006', studentName: 'Vũ Minh Khôi', status: 'Present' },
+                { studentId: 'HV007', studentName: 'Phạm Gia Hân', status: 'Excused', note: 'Xin nghỉ về quê' },
+                { studentId: 'HV008', studentName: 'Nguyễn Minh Khang', status: 'Absent', note: 'Bận đột xuất' },
+                { studentId: 'HV009', studentName: 'Hoàng Thị Mai', status: 'Present' },
+                { studentId: 'HV010', studentName: 'Phan Văn Toàn', status: 'Present' },
+                { studentId: 'HV011', studentName: 'Bùi Anh Dũng', status: 'Present' },
+                { studentId: 'HV012', studentName: 'Trịnh Thuỳ Trang', status: 'Present' }
+              ]
+            : isSampleManagerReviewedToday
+            ? [
+                { studentId: 'HV023', studentName: 'Lương Tấn Phát', status: 'Present' },
+                { studentId: 'HV026', studentName: 'Cao Hoàng Long', status: 'Present' },
+                { studentId: 'HV030', studentName: 'Đặng Thu Thảo', status: 'Present' },
+                { studentId: 'HV035', studentName: 'Tạ Quốc Khánh', status: 'Present' }
+              ]
+            : [];
+
           sessions.push({
             id: sessionId,
             classId: cls.classId,
@@ -1129,18 +1213,30 @@ const generateInitialSessions = (): SessionSchedule[] => {
             startTime: cls.startTime,
             endTime: cls.endTime,
             timeSlot: cls.timeSlot,
-            status: isPast ? 'Completed' : 'Upcoming',
-            attendanceDone: isPast,
-            coachAttendanceDone: isPast,
-            coachAttendance: isPast ? {
+            status: isPast || isSampleManagerReviewedToday ? 'Completed' : 'Upcoming',
+            attendanceDone: isPast || isSampleCoachAttendedToday || isSampleManagerReviewedToday,
+            attendedBy: isSampleCoachAttendedToday ? 'Nguyễn Minh Anh' : isSampleManagerReviewedToday ? 'Phạm Đức Long' : isPast ? 'Huấn Luyện Viên' : undefined,
+            attendedByRole: isSampleCoachAttendedToday || isSampleManagerReviewedToday ? 'COACH' : isPast ? 'COACH' : undefined,
+            attendedAt: isSampleCoachAttendedToday ? '28/08/2026 18:05' : isSampleManagerReviewedToday ? '28/08/2026 18:02' : isPast ? `${dateStr} 19:30` : undefined,
+            managerReviewed: isSampleManagerReviewedToday,
+            managerReviewedBy: isSampleManagerReviewedToday ? 'Lê Quản Lý Phú Đô' : undefined,
+            managerReviewedAt: isSampleManagerReviewedToday ? '28/08/2026 18:15' : undefined,
+            coachAttendanceDone: isPast || isSampleManagerReviewedToday,
+            coachAttendance: isSampleManagerReviewedToday ? {
+              coachId: 'HLV004',
+              coachName: 'Phạm Đức Long',
+              status: 'Present',
+              checkedBy: 'Lê Quản Lý Phú Đô',
+              checkedByRole: 'FACILITY_MANAGER',
+              checkedAt: '28/08/2026 18:15'
+            } : isPast ? {
               status: isLateSample ? 'Late' : 'Present',
               checkedBy: 'Ban Quản Trị Trung Tâm',
               checkedByRole: 'ADMIN',
               checkedAt: `${dateStr} 19:35`
             } : undefined,
-            totalStudents: 12,
-            isCoachRegistered: true,
-            attendanceRecords: [],
+            totalStudents: sampleStudentRecords.length > 0 ? sampleStudentRecords.length : 12,
+            attendanceRecords: sampleStudentRecords,
             makeupStudents: []
           });
         }
@@ -1155,6 +1251,7 @@ export const INITIAL_ALL_SESSIONS: SessionSchedule[] = generateInitialSessions()
 export const INITIAL_TODAY_SESSIONS: SessionSchedule[] = INITIAL_ALL_SESSIONS.filter(s => s.date === '2026-08-28');
 
 export const INITIAL_PAYMENTS: PaymentItem[] = [
+  // CS01: Triều Khúc (Hoàng Văn Long quản lý)
   {
     id: 'PAY-001',
     code: 'PAY-2026-0801',
@@ -1163,12 +1260,15 @@ export const INITIAL_PAYMENTS: PaymentItem[] = [
     studentPhone: '0901 234 567',
     classId: 'BD-B01',
     className: 'Lớp 01',
+    facilityId: 'CS01',
+    facilityName: 'Triều Khúc',
     amount: 1800000,
     month: 'Tháng 08/2026',
     dueDate: '05/08/2026',
     paidDate: '02/08/2026',
     status: 'Paid',
     method: 'Chuyển khoản QR',
+    collectorName: 'Hoàng Văn Long',
     note: 'Đóng khóa 12 buổi'
   },
   {
@@ -1179,12 +1279,15 @@ export const INITIAL_PAYMENTS: PaymentItem[] = [
     studentPhone: '0912 345 678',
     classId: 'BD-B01',
     className: 'Lớp 01',
+    facilityId: 'CS01',
+    facilityName: 'Triều Khúc',
     amount: 1800000,
     month: 'Tháng 08/2026',
     dueDate: '05/08/2026',
     paidDate: '01/08/2026',
     status: 'Paid',
-    method: 'Chuyển khoản QR'
+    method: 'Chuyển khoản QR',
+    collectorName: 'Hoàng Văn Long'
   },
   {
     id: 'PAY-003',
@@ -1194,6 +1297,8 @@ export const INITIAL_PAYMENTS: PaymentItem[] = [
     studentPhone: '0933 456 789',
     classId: 'BD-B01',
     className: 'Lớp 01',
+    facilityId: 'CS01',
+    facilityName: 'Triều Khúc',
     amount: 1800000,
     month: 'Tháng 08/2026',
     dueDate: '20/08/2026',
@@ -1208,12 +1313,15 @@ export const INITIAL_PAYMENTS: PaymentItem[] = [
     studentPhone: '0945 678 901',
     classId: 'BD-B01',
     className: 'Lớp 01',
+    facilityId: 'CS01',
+    facilityName: 'Triều Khúc',
     amount: 1800000,
     month: 'Tháng 08/2026',
     dueDate: '05/08/2026',
     paidDate: '03/08/2026',
     status: 'Paid',
-    method: 'Tiền mặt'
+    method: 'Tiền mặt',
+    collectorName: 'Hoàng Văn Long'
   },
   {
     id: 'PAY-005',
@@ -1223,6 +1331,8 @@ export const INITIAL_PAYMENTS: PaymentItem[] = [
     studentPhone: '0966 789 012',
     classId: 'BD-B01',
     className: 'Lớp 01',
+    facilityId: 'CS01',
+    facilityName: 'Triều Khúc',
     amount: 1800000,
     month: 'Tháng 08/2026',
     dueDate: '10/08/2026',
@@ -1237,12 +1347,15 @@ export const INITIAL_PAYMENTS: PaymentItem[] = [
     studentPhone: '0978 901 234',
     classId: 'BD-B01',
     className: 'Lớp 01',
+    facilityId: 'CS01',
+    facilityName: 'Triều Khúc',
     amount: 1800000,
     month: 'Tháng 08/2026',
     dueDate: '15/08/2026',
     paidDate: '07/08/2026',
     status: 'Paid',
-    method: 'Ví MoMo'
+    method: 'Ví MoMo',
+    collectorName: 'Hoàng Văn Long'
   },
   {
     id: 'PAY-007',
@@ -1252,12 +1365,86 @@ export const INITIAL_PAYMENTS: PaymentItem[] = [
     studentPhone: '0908 123 789',
     classId: 'BD-B01',
     className: 'Lớp 01',
+    facilityId: 'CS01',
+    facilityName: 'Triều Khúc',
     amount: 1800000,
     month: 'Tháng 08/2026',
     dueDate: '25/08/2026',
     status: 'Unpaid',
     note: 'Hẹn chuyển khoản ngày 30/08'
   },
+
+  // CS02: Cầu Giấy (Vũ Đức Thịnh quản lý)
+  {
+    id: 'PAY-010',
+    code: 'PAY-2026-0810',
+    studentId: 'HV013',
+    studentName: 'Trịnh Văn Nam',
+    studentPhone: '0912 888 999',
+    classId: 'BD-B02',
+    className: 'Lớp 02',
+    facilityId: 'CS02',
+    facilityName: 'Cầu Giấy',
+    amount: 1800000,
+    month: 'Tháng 08/2026',
+    dueDate: '05/08/2026',
+    paidDate: '02/08/2026',
+    status: 'Paid',
+    method: 'Chuyển khoản QR',
+    collectorName: 'Vũ Đức Thịnh'
+  },
+  {
+    id: 'PAY-011',
+    code: 'PAY-2026-0811',
+    studentId: 'HV014',
+    studentName: 'Bùi Phương Thảo',
+    studentPhone: '0988 777 666',
+    classId: 'BD-B02',
+    className: 'Lớp 02',
+    facilityId: 'CS02',
+    facilityName: 'Cầu Giấy',
+    amount: 1800000,
+    month: 'Tháng 08/2026',
+    dueDate: '10/08/2026',
+    status: 'Unpaid',
+    note: 'Học viên xin nộp vào ca tập tiếp theo'
+  },
+  {
+    id: 'PAY-012',
+    code: 'PAY-2026-0812',
+    studentId: 'HV015',
+    studentName: 'Lê Hải Yến',
+    studentPhone: '0977 123 456',
+    classId: 'BD-B02',
+    className: 'Lớp 02',
+    facilityId: 'CS02',
+    facilityName: 'Cầu Giấy',
+    amount: 1800000,
+    month: 'Tháng 08/2026',
+    dueDate: '05/08/2026',
+    paidDate: '04/08/2026',
+    status: 'Paid',
+    method: 'Tiền mặt',
+    collectorName: 'Vũ Đức Thịnh'
+  },
+  {
+    id: 'PAY-013',
+    code: 'PAY-2026-0813',
+    studentId: 'HV016',
+    studentName: 'Nguyễn Gia Huy',
+    studentPhone: '0932 654 987',
+    classId: 'BD-B02',
+    className: 'Lớp 02',
+    facilityId: 'CS02',
+    facilityName: 'Cầu Giấy',
+    amount: 1800000,
+    month: 'Tháng 08/2026',
+    dueDate: '08/08/2026',
+    status: 'Overdue',
+    note: 'Quá hạn nộp học phí khóa mới'
+  },
+
+  // CS03: Mỹ Đình (Nguyễn Văn Hùng quản lý)
   {
     id: 'PAY-008',
     code: 'PAY-2026-0808',
@@ -1266,13 +1453,88 @@ export const INITIAL_PAYMENTS: PaymentItem[] = [
     studentPhone: '0961 112 233',
     classId: 'BD-I01',
     className: 'Lớp 03',
+    facilityId: 'CS03',
+    facilityName: 'Mỹ Đình',
     amount: 2200000,
     month: 'Tháng 08/2026',
     dueDate: '05/08/2026',
     paidDate: '04/08/2026',
     status: 'Paid',
-    method: 'Chuyển khoản QR'
+    method: 'Chuyển khoản QR',
+    collectorName: 'Nguyễn Văn Hùng'
   },
+  {
+    id: 'PAY-014',
+    code: 'PAY-2026-0814',
+    studentId: 'HV020',
+    studentName: 'Trần Thu Trang',
+    studentPhone: '0903 555 123',
+    classId: 'BD-I01',
+    className: 'Lớp 03',
+    facilityId: 'CS03',
+    facilityName: 'Mỹ Đình',
+    amount: 2200000,
+    month: 'Tháng 08/2026',
+    dueDate: '20/08/2026',
+    status: 'Unpaid',
+    note: 'Đang theo dõi khóa nâng cao'
+  },
+  {
+    id: 'PAY-015',
+    code: 'PAY-2026-0815',
+    studentId: 'HV021',
+    studentName: 'Nguyễn Thế Phong',
+    studentPhone: '0918 333 444',
+    classId: 'BD-I01',
+    className: 'Lớp 03',
+    facilityId: 'CS03',
+    facilityName: 'Mỹ Đình',
+    amount: 2200000,
+    month: 'Tháng 08/2026',
+    dueDate: '05/08/2026',
+    paidDate: '01/08/2026',
+    status: 'Paid',
+    method: 'Chuyển khoản QR',
+    collectorName: 'Nguyễn Văn Hùng'
+  },
+
+  // CS04: Phú Đô (Phạm Đức Long quản lý)
+  {
+    id: 'PAY-016',
+    code: 'PAY-2026-0816',
+    studentId: 'HV022',
+    studentName: 'Hoàng Tuấn Anh',
+    studentPhone: '0977 444 888',
+    classId: 'BD-I02',
+    className: 'Lớp 04',
+    facilityId: 'CS04',
+    facilityName: 'Phú Đô',
+    amount: 2400000,
+    month: 'Tháng 08/2026',
+    dueDate: '05/08/2026',
+    paidDate: '03/08/2026',
+    status: 'Paid',
+    method: 'Chuyển khoản QR',
+    collectorName: 'Phạm Đức Long'
+  },
+  {
+    id: 'PAY-017',
+    code: 'PAY-2026-0817',
+    studentId: 'HV023',
+    studentName: 'Đỗ Thùy Linh',
+    studentPhone: '0981 222 333',
+    classId: 'BD-I02',
+    className: 'Lớp 04',
+    facilityId: 'CS04',
+    facilityName: 'Phú Đô',
+    amount: 2400000,
+    month: 'Tháng 08/2026',
+    dueDate: '15/08/2026',
+    status: 'Unpaid',
+    note: 'Đã nhắc qua Zalo'
+  },
+
+  // CS05: Trung tâm đào tạo (Admin)
   {
     id: 'PAY-009',
     code: 'PAY-2026-0809',
@@ -1281,12 +1543,31 @@ export const INITIAL_PAYMENTS: PaymentItem[] = [
     studentPhone: '0983 445 566',
     classId: 'BD-A01',
     className: 'Lớp 05',
+    facilityId: 'CS05',
+    facilityName: 'Trung tâm đào tạo',
     amount: 2800000,
     month: 'Tháng 08/2026',
     dueDate: '05/08/2026',
     paidDate: '05/08/2026',
     status: 'Paid',
-    method: 'Chuyển khoản QR'
+    method: 'Chuyển khoản QR',
+    collectorName: 'Ban Quản Trị Trung Tâm'
+  },
+  {
+    id: 'PAY-018',
+    code: 'PAY-2026-0818',
+    studentId: 'HV027',
+    studentName: 'Ngô Quang Dũng',
+    studentPhone: '0904 999 111',
+    classId: 'BD-A01',
+    className: 'Lớp 05',
+    facilityId: 'CS05',
+    facilityName: 'Trung tâm đào tạo',
+    amount: 2800000,
+    month: 'Tháng 08/2026',
+    dueDate: '10/08/2026',
+    status: 'Overdue',
+    note: 'Lớp chuyên sâu thi đấu'
   }
 ];
 
