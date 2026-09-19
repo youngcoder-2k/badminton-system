@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Modal } from '../components/common/Modal';
-import { CenterHoliday, Coach, Facility } from '../types';
+import { CenterHoliday, Coach, Facility, BadmintonClass } from '../types';
 
 export const ClassesView: React.FC = () => {
   const {
@@ -1013,35 +1013,30 @@ export const ClassesView: React.FC = () => {
         </div>
       </div>
 
-      {/* Coach Pre-Session Reminder Banner for ClassesView */}
+      {/* Coach Pre-Session Reminder Banner for ClassesView (Gọn gàng, tinh tế, chỉ hiển thị thông báo) */}
       {isCoach && coachReminders.length > 0 && (
-        <div className="p-4 sm:p-5 bg-gradient-to-br from-amber-50/90 via-orange-50/40 to-amber-50/70 border border-amber-200/90 rounded-3xl space-y-3.5 shadow-xs animate-in fade-in">
+        <div className="p-3 sm:p-3.5 bg-gradient-to-r from-amber-50/90 via-orange-50/50 to-amber-50/80 border border-amber-200/80 rounded-2xl space-y-2.5 shadow-2xs animate-in fade-in">
           {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-amber-200/60">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs shrink-0">
-                <Bell className="w-4 h-4" />
+          <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-amber-200/50">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center shadow-2xs shrink-0">
+                <Bell className="w-3.5 h-3.5" />
               </div>
-              <div>
-                <h3 className="font-extrabold text-sm sm:text-base text-slate-900">
-                  Dặn Dò Ca Dạy Từ Ban Quản Lý
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Lưu ý và dặn dò chuyên môn cho các ca dạy của bạn
-                </p>
-              </div>
+              <h3 className="font-extrabold text-xs sm:text-sm text-slate-900">
+                Dặn Dò Ca Dạy Từ Ban Quản Lý
+              </h3>
             </div>
 
             {coachReminders.filter(n => !n.read).length > 0 && (
-              <span className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500 text-white text-xs font-bold shadow-xs">
-                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold shadow-2xs">
+                <span className="w-1 h-1 rounded-full bg-white animate-pulse" />
                 <span>{coachReminders.filter(n => !n.read).length} lời nhắc mới</span>
               </span>
             )}
           </div>
 
           {/* Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
             {coachReminders.slice(0, 4).map(item => {
               const cleanFac = formatCleanFacilityName(item.facilityName || 'Triều Khúc');
               const shiftLabel = item.shiftName || 'Ca học';
@@ -1049,45 +1044,33 @@ export const ClassesView: React.FC = () => {
               return (
                 <div
                   key={item.id}
-                  onClick={() => {
-                    if (item.linkTo?.id) {
-                      navigate('classes', item.linkTo.id, 'classes');
-                    }
-                  }}
-                  className="bg-white rounded-2xl border border-amber-200/80 hover:border-amber-400 p-3.5 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between gap-2.5 group"
+                  className="bg-white/95 rounded-xl border border-amber-200/70 p-2.5 sm:p-3 flex flex-col justify-between gap-1.5 shadow-2xs"
                 >
+                  {/* Top info row */}
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-800 text-xs font-bold border border-slate-200/70">
-                        <MapPin className="w-3 h-3 text-amber-600 shrink-0" />
-                        <span className="truncate">{cleanFac}</span>
+                    <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                      <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[10px] font-bold border border-slate-200/60 shrink-0">
+                        {cleanFac}
                       </span>
-
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-50 text-amber-900 text-xs font-bold border border-amber-200/80">
-                        <Clock className="w-3 h-3 text-amber-600 shrink-0" />
-                        <span>{shiftLabel}</span>
+                      <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-900 text-[10px] font-bold border border-amber-200/70 shrink-0">
+                        {shiftLabel}
                       </span>
                     </div>
 
-                    <span className="text-[11px] text-slate-400 shrink-0 font-medium">
+                    <span className="text-[10px] text-slate-400 shrink-0 font-medium">
                       {item.time || 'Vừa xong'}
                     </span>
                   </div>
 
-                  <div className="p-3 bg-amber-50/50 rounded-xl border-l-3 border-amber-500 text-xs sm:text-sm text-slate-800 font-medium leading-relaxed">
+                  {/* Message body */}
+                  <p className="text-xs text-slate-800 font-medium leading-relaxed">
                     "{item.noteContent || item.message}"
-                  </div>
+                  </p>
 
-                  <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs">
-                    <span className="text-slate-500 text-[11px] font-medium flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-                      <span>{item.senderName || 'Ban Quản Trị'}</span>
-                    </span>
-
-                    <span className="text-emerald-600 group-hover:text-emerald-700 font-bold text-xs inline-flex items-center gap-1 transition-colors">
-                      <span>Xem ca học</span>
-                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                    </span>
+                  {/* Bottom: Sender */}
+                  <div className="flex items-center gap-1.5 text-[10px] text-slate-400 pt-1 border-t border-slate-100">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                    <span>{item.senderName || 'Ban Quản Trị'}</span>
                   </div>
                 </div>
               );

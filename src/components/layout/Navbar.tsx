@@ -41,44 +41,13 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSearch, onOpenAddStudent }
     setAttendanceTarget
   } = useApp();
 
-  const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginError, setLoginError] = useState('');
-  const notifRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const coachReminderNotifs = useMemo(() => {
-    if (currentUser.role !== 'COACH') return [];
-    return notifications.filter(
-      n => n.targetRole === 'COACH' && (!n.targetCoachId || n.targetCoachId === currentUser.coachId)
-    );
-  }, [currentUser, notifications]);
-
-  const visibleNotifications = useMemo(() => {
-    return notifications.filter(n => {
-      if (n.targetUserId && n.targetUserId !== currentUser.id) {
-        return false;
-      }
-      if (currentUser.role === 'COACH') {
-        if (n.targetRole && n.targetRole !== 'COACH') return false;
-        if (n.targetCoachId && n.targetCoachId !== currentUser.coachId) return false;
-      }
-      return true;
-    });
-  }, [currentUser, notifications]);
-
-  const totalUnreadCount = useMemo(() => {
-    if (currentUser.role === 'ADMIN') {
-      return visibleNotifications.filter(n => !n.read).length + pendingScheduleCount;
-    }
-    return visibleNotifications.filter(n => !n.read).length;
-  }, [currentUser, visibleNotifications, pendingScheduleCount]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
-        setIsNotifOpen(false);
-      }
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
         setIsUserMenuOpen(false);
       }
@@ -157,156 +126,6 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSearch, onOpenAddStudent }
             </span>
           )}
         </button>
-
-        {/* Notifications Button & Dropdown */}
-        <div className="relative" ref={notifRef}>
-          <button
-            onClick={() => setIsNotifOpen(!isNotifOpen)}
-            className="relative p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
-          >
-            <Bell className="w-5 h-5" />
-            {totalUnreadCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center shadow-xs">
-                {totalUnreadCount}
-              </span>
-            )}
-          </button>
-
-          {/* Notifications Dropdown */}
-          {isNotifOpen && (
-            <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-xl border border-slate-200 p-3 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-              <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-[#0F172A]">Thông báo</span>
-                  {totalUnreadCount > 0 && (
-                    <span className="px-2 py-0.5 bg-rose-100 text-rose-700 text-xs font-bold rounded-full">
-                      {totalUnreadCount} mới
-                    </span>
-                  )}
-                </div>
-                {notifications.filter(n => !n.read).length > 0 && (
-                  <button
-                    onClick={markAllNotificationsAsRead}
-                    className="text-xs text-[#10B981] hover:text-emerald-700 font-semibold cursor-pointer"
-                  >
-                    Đọc tất cả
-                  </button>
-                )}
-              </div>
-
-              {/* Pending Schedule Alert for Admin */}
-              {currentUser.role === 'ADMIN' && pendingScheduleCount > 0 && (
-                <div
-                  onClick={() => {
-                    navigate('schedule');
-                    setIsNotifOpen(false);
-                  }}
-                  className="mb-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 cursor-pointer hover:bg-amber-100/70 transition-colors flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
-                    <span className="text-xs font-bold text-amber-900">
-                      {pendingScheduleCount} học viên cần Admin lưu lịch!
-                    </span>
-                  </div>
-                  <span className="text-[11px] font-bold text-amber-800 underline">
-                    Xem & Duyệt →
-                  </span>
-                </div>
-              )}
-
-              {/* Pre-session Reminder Alert for Coach */}
-              {currentUser.role === 'COACH' && coachReminderNotifs.length > 0 && (
-                <div className="mb-2.5 p-3 rounded-2xl bg-amber-50 border-2 border-amber-300 shadow-2xs space-y-2 animate-in fade-in">
-                  <div className="flex items-center justify-between text-xs font-black text-amber-950">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
-                      Dặn Dò Ca Dạy Từ Ban Quản Lý
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-950 text-[10px] font-bold">
-                      {coachReminderNotifs.filter(n => !n.read).length} mới
-                    </span>
-                  </div>
-                  <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                    {coachReminderNotifs.slice(0, 3).map(notif => (
-                      <div
-                        key={notif.id}
-                        onClick={() => {
-                          markNotificationAsRead(notif.id);
-                          if (notif.linkTo) {
-                            navigate(notif.linkTo.tab, notif.linkTo.id);
-                            setIsNotifOpen(false);
-                          }
-                        }}
-                        className="p-2 bg-white rounded-xl border border-amber-200 hover:bg-amber-100/50 transition-colors cursor-pointer"
-                      >
-                        <div className="text-xs font-extrabold text-amber-950 truncate">
-                          {notif.facilityName ? `${notif.facilityName} - ${notif.shiftName}` : notif.title}
-                        </div>
-                        <p className="text-[11px] text-slate-800 font-semibold mt-0.5 line-clamp-2">
-                          "{notif.noteContent || notif.message}"
-                        </p>
-                        <div className="flex items-center justify-between mt-1 text-[10px] text-slate-400">
-                          <span>{notif.senderName || 'Ban Quản Trị'}</span>
-                          <span className="text-[#10B981] font-bold">Xem ca dạy →</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="max-h-72 overflow-y-auto space-y-2">
-                {visibleNotifications.length === 0 ? (
-                  <p className="py-6 text-center text-xs text-slate-400">Không có thông báo nào</p>
-                ) : (
-                  visibleNotifications.map(notif => (
-                    <div
-                      key={notif.id}
-                      onClick={() => {
-                        markNotificationAsRead(notif.id);
-                        if (notif.linkTo) {
-                          navigate(notif.linkTo.tab, notif.linkTo.id);
-                          setIsNotifOpen(false);
-                        }
-                      }}
-                      className={`p-2.5 rounded-xl transition-colors cursor-pointer border flex items-start gap-3 ${
-                        notif.read
-                          ? 'bg-white hover:bg-slate-50 border-slate-100 text-slate-600'
-                          : 'bg-emerald-50/60 hover:bg-emerald-50 border-emerald-200/60 text-[#0F172A]'
-                      }`}
-                    >
-                      <div className="mt-0.5 shrink-0">
-                        {notif.linkTo?.tab === 'chat' ? (
-                          <MessageSquare className="w-4 h-4 text-emerald-600" />
-                        ) : notif.type === 'warning' ? (
-                          <AlertTriangle className="w-4 h-4 text-amber-500" />
-                        ) : notif.type === 'info' ? (
-                          <Calendar className="w-4 h-4 text-sky-500" />
-                        ) : notif.type === 'alert' ? (
-                          <AlertTriangle className="w-4 h-4 text-rose-500" />
-                        ) : (
-                          <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-bold leading-snug flex items-center justify-between">
-                          <span className="truncate">{notif.title}</span>
-                          <span className="text-[10px] text-slate-400 font-normal shrink-0 ml-1">
-                            {notif.time}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">
-                          {notif.message}
-                        </p>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </div>
 
         {/* Role Switcher & User Profile */}
         <div className="relative" ref={userMenuRef}>

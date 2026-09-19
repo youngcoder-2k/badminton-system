@@ -609,7 +609,7 @@ export const AttendanceView: React.FC = () => {
 
     if (isCoach && isCoachLocked) {
       if (isStudentAttendanceDone) {
-        showToast('Bạn đã gửi điểm danh học viên cho ca này! Vui lòng chờ Quản lý cơ sở kiểm tra và chấm công.', 'warning');
+        showToast('Bạn đã điểm danh học viên cho ca này!', 'warning');
       } else {
         showToast('HLV chỉ có thể điểm danh học viên trong ngày hôm nay.', 'warning');
       }
@@ -664,7 +664,7 @@ export const AttendanceView: React.FC = () => {
 
     if (isCoach && isCoachLocked) {
       if (isStudentAttendanceDone) {
-        showToast('Bạn đã gửi điểm danh học viên cho ca này! Vui lòng chờ Quản lý cơ sở kiểm tra và chấm công.', 'warning');
+        showToast('Bạn đã điểm danh học viên cho ca này!', 'warning');
       } else {
         showToast('HLV chỉ có thể điểm danh học viên trong ngày hôm nay.', 'warning');
       }
@@ -752,7 +752,7 @@ export const AttendanceView: React.FC = () => {
     }
 
     if (isCoach && isCoachLocked) {
-      showToast('Bạn đã gửi điểm danh học viên cho ca này! Vui lòng chờ Quản lý cơ sở kiểm tra và chấm công.', 'warning');
+      showToast('Bạn đã điểm danh học viên cho ca này!', 'warning');
       return;
     }
 
@@ -988,10 +988,10 @@ export const AttendanceView: React.FC = () => {
               isStudentAttendanceDone ? (
                 <div
                   className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-emerald-50 text-emerald-800 font-bold text-xs sm:text-sm rounded-xl border border-emerald-200 shadow-2xs select-none whitespace-nowrap"
-                  title="Bạn đã gửi điểm danh học viên cho ca này. Vui lòng chờ Quản lý cơ sở kiểm tra và chấm công!"
+                  title="Bạn đã điểm danh học viên cho ca này!"
                 >
                   <CheckCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>ĐÃ GỬI ĐIỂM DANH (CHỜ QL CHẤM CÔNG)</span>
+                  <span>ĐÃ ĐIỂM DANH</span>
                 </div>
               ) : (
                 <button
@@ -1029,8 +1029,8 @@ export const AttendanceView: React.FC = () => {
                 <CheckCheck className="w-4 h-4 shrink-0" />
                 <span>
                   {targetSession?.coachAttendanceDone || targetSession?.attendanceDone
-                    ? 'LƯU ĐIỀU CHỈNH / SỬA SAI SÓT (ADMIN)'
-                    : 'DUYỆT ĐIỂM DANH (ADMIN)'}
+                    ? 'LƯU ĐIỀU CHỈNH'
+                    : 'DUYỆT ĐIỂM DANH'}
                 </span>
               </button>
             )}
@@ -1304,9 +1304,6 @@ export const AttendanceView: React.FC = () => {
                       <div className="text-sm font-extrabold text-[#0F172A] truncate">
                         {item.coachName}
                       </div>
-                      <div className="text-[10px] text-slate-400 font-medium">
-                        {isCoach ? 'Huấn luyện viên phụ trách ca' : item.className || 'Huấn luyện viên phụ trách'}
-                      </div>
                     </div>
                   </div>
 
@@ -1531,13 +1528,7 @@ export const AttendanceView: React.FC = () => {
             {!isSelectedDateFuture && isCoach && isStudentAttendanceDone && (
               <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 normal-case tracking-normal flex items-center gap-1">
                 <CheckCheck className="w-3 h-3 text-emerald-600" />
-                Đã gửi điểm danh (Chờ QL chấm công)
-              </span>
-            )}
-            {!isSelectedDateFuture && isFacilityManager && isFacilityManagerLocked && (
-              <span className="text-[10px] font-extrabold text-indigo-800 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200 normal-case tracking-normal flex items-center gap-1">
-                <Lock className="w-3 h-3 text-indigo-600" />
-                Đã duyệt & chốt (Chỉ Admin mới được sửa)
+                Đã điểm danh
               </span>
             )}
           </h2>
@@ -1650,7 +1641,7 @@ export const AttendanceView: React.FC = () => {
                       isSelectedDateFuture
                         ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
                         : isCoach && isStudentAttendanceDone
-                        ? 'Bạn đã gửi điểm danh học viên cho ca này! Chờ Quản lý cơ sở kiểm tra và chấm công.'
+                        ? 'Bạn đã điểm danh học viên cho ca này!'
                         : isFacilityManager && isFacilityManagerLocked
                         ? 'Ca học này đã được duyệt và chốt. Chỉ Admin mới có quyền sửa!'
                         : !isAdmin && !isSelectedDateToday
@@ -1693,7 +1684,7 @@ export const AttendanceView: React.FC = () => {
                       isSelectedDateFuture
                         ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
                         : isCoach && isStudentAttendanceDone
-                        ? 'Bạn đã gửi điểm danh học viên cho ca này! Chờ Quản lý cơ sở kiểm tra và chấm công.'
+                        ? 'Bạn đã điểm danh học viên cho ca này!'
                         : isFacilityManager && isFacilityManagerLocked
                         ? 'Ca học này đã được duyệt và chốt. Chỉ Admin mới có quyền sửa!'
                         : !isAdmin && !isSelectedDateToday
@@ -1724,7 +1715,7 @@ export const AttendanceView: React.FC = () => {
                       isSelectedDateFuture
                         ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
                         : isCoach && isStudentAttendanceDone
-                        ? 'Bạn đã gửi điểm danh học viên cho ca này! Chờ Quản lý cơ sở kiểm tra và chấm công.'
+                        ? 'Bạn đã điểm danh học viên cho ca này!'
                         : isFacilityManager && isFacilityManagerLocked
                         ? 'Ca học này đã được duyệt và chốt. Chỉ Admin mới có quyền sửa!'
                         : !isAdmin && !isSelectedDateToday
@@ -1843,7 +1834,7 @@ export const AttendanceView: React.FC = () => {
                         isSelectedDateFuture
                           ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
                           : isCoach && isStudentAttendanceDone
-                          ? 'Bạn đã gửi điểm danh học viên cho ca này! Chờ Quản lý cơ sở kiểm tra và chấm công.'
+                          ? 'Bạn đã điểm danh học viên cho ca này!'
                           : isFacilityManager && isFacilityManagerLocked
                           ? 'Ca học này đã được duyệt và chốt. Chỉ Admin mới có quyền sửa!'
                           : !isAdmin && !isSelectedDateToday
@@ -1876,7 +1867,7 @@ export const AttendanceView: React.FC = () => {
                         isSelectedDateFuture
                           ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
                           : isCoach && isStudentAttendanceDone
-                          ? 'Bạn đã gửi điểm danh học viên cho ca này! Chờ Quản lý cơ sở kiểm tra và chấm công.'
+                          ? 'Bạn đã điểm danh học viên cho ca này!'
                           : isFacilityManager && isFacilityManagerLocked
                           ? 'Ca học này đã được duyệt và chốt. Chỉ Admin mới có quyền sửa!'
                           : !isAdmin && !isSelectedDateToday
@@ -1907,7 +1898,7 @@ export const AttendanceView: React.FC = () => {
                         isSelectedDateFuture
                           ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
                           : isCoach && isStudentAttendanceDone
-                          ? 'Bạn đã gửi điểm danh học viên cho ca này! Chờ Quản lý cơ sở kiểm tra và chấm công.'
+                          ? 'Bạn đã điểm danh học viên cho ca này!'
                           : isFacilityManager && isFacilityManagerLocked
                           ? 'Ca học này đã được duyệt và chốt. Chỉ Admin mới có quyền sửa!'
                           : !isAdmin && !isSelectedDateToday
@@ -1967,7 +1958,7 @@ export const AttendanceView: React.FC = () => {
               <div className="flex items-center gap-2 text-xs">
                 <CheckCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                 <span className="font-semibold text-slate-200 text-xs">
-                  Đã gửi điểm danh • Chờ QL chấm công
+                  Đã điểm danh
                 </span>
               </div>
               <span className="text-[11px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-0.5 rounded-lg shrink-0">
@@ -2037,8 +2028,8 @@ export const AttendanceView: React.FC = () => {
               <CheckCheck className="w-4 h-4" />
               <span>
                 {targetSession?.coachAttendanceDone || targetSession?.attendanceDone
-                  ? 'LƯU ĐIỀU CHỈNH (ADMIN)'
-                  : 'DUYỆT ĐIỂM DANH (ADMIN)'}
+                  ? 'LƯU ĐIỀU CHỈNH'
+                  : 'DUYỆT ĐIỂM DANH'}
               </span>
             </button>
           </div>
@@ -2057,7 +2048,7 @@ export const AttendanceView: React.FC = () => {
             : isFacilityManager
             ? 'Xác nhận duyệt & chốt ca học'
             : targetSession?.coachAttendanceDone || targetSession?.attendanceDone
-            ? 'Lưu điều chỉnh / sửa sai sót (Admin)'
+            ? 'Lưu điều chỉnh'
             : 'Xác nhận duyệt điểm danh (Admin)'
         }
         subtitle={`Ngày ${selectedDate} • ${selectedShiftName} • ${formatCleanFacilityName(currentFacilityName)}`}
@@ -2122,7 +2113,7 @@ export const AttendanceView: React.FC = () => {
                   ? 'Gửi điểm danh học viên'
                   : isFacilityManager
                   ? 'Duyệt & Chốt ca học'
-                  : 'Lưu điều chỉnh (Admin)'}
+                  : 'Lưu điều chỉnh'}
               </span>
             </button>
           </div>

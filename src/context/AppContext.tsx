@@ -39,6 +39,29 @@ import {
   UserProfile,
   UserRole
 } from '../types';
+import {
+  getSupabaseConfig,
+  isSupabaseConfigured,
+  saveSupabaseConfig,
+  clearSupabaseConfig,
+  testSupabaseConnection
+} from '../lib/supabase';
+import {
+  fetchCompleteDatabase,
+  seedCompleteDatabase,
+  syncSingleFacility,
+  syncSingleShift,
+  syncSingleCoach,
+  syncSingleClass,
+  syncSingleStudent,
+  syncSingleSession,
+  syncSinglePayment,
+  syncSingleUserProfile,
+  syncSingleHoliday,
+  syncSingleChatMessage,
+  syncSingleAdminNotification,
+  deleteDatabaseRecord
+} from '../services/supabaseService';
 
 export interface ToastItem {
   id: string;
@@ -296,6 +319,19 @@ interface AppContextType {
   }) => { success: boolean; affectedCount: number };
   removeHoliday: (holidayId: string) => void;
   isHoliday: (dateStr: string, facilityId?: string) => CenterHoliday | undefined;
+
+  // Supabase Database Management
+  supabaseConfigured: boolean;
+  supabaseConnected: boolean;
+  supabaseLoading: boolean;
+  supabaseLastSync: string | null;
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+  testSupabase: () => Promise<{ success: boolean; message: string }>;
+  saveSupabaseSettings: (url: string, anonKey: string) => Promise<{ success: boolean; message: string }>;
+  clearSupabaseSettings: () => void;
+  seedSupabaseDatabase: () => Promise<{ success: boolean; message: string; count: number }>;
+  refreshDataFromSupabase: () => Promise<boolean>;
 }
 
 const getInitialSystemUsers = (): UserProfile[] => {
@@ -555,6 +591,173 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, 3500);
   }, [removeToast]);
 
+  // Supabase Database State
+  const [supabaseConfigState, setSupabaseConfigState] = useState(() => getSupabaseConfig());
+  const [supabaseConnected, setSupabaseConnected] = useState<boolean>(false);
+  const [supabaseLoading, setSupabaseLoading] = useState<boolean>(false);
+  const [supabaseLastSync, setSupabaseLastSync] = useState<string | null>(null);
+
+  // Tải dữ liệu toàn hệ thống từ Supabase
+  const loadDataFromSupabase = useCallback(async (showFeedback = false) => {
+    if (!isSupabaseConfigured()) {
+      setSupabaseConnected(false);
+      return false;
+    }
+
+    setSupabaseLoading(true);
+    try {
+      const res = await fetchCompleteDatabase();
+      if (res.success && res.data) {
+        setSupabaseConnected(true);
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ' + now.toLocaleDateString('vi-VN');
+        setSupabaseLastSync(timeStr);
+
+        if (res.data.facilities && res.data.facilities.length > 0) {
+          setFacilities(res.data.facilities);
+          setCourts(res.data.facilities);
+        }
+        if (res.data.shifts && res.data.shifts.length > 0) {
+          setShifts(res.data.shifts);
+        }
+        if (res.data.coaches && res.data.coaches.length > 0) {
+          setCoaches(res.data.coaches);
+        }
+        if (res.data.classes && res.data.classes.length > 0) {
+          setClasses(res.data.classes);
+        }
+        if (res.data.students && res.data.students.length > 0) {
+          setStudents(res.data.students);
+        }
+        if (res.data.sessions && res.data.sessions.length > 0) {
+          setSessions(res.data.sessions);
+        }
+        if (res.data.payments && res.data.payments.length > 0) {
+          setPayments(res.data.payments);
+        }
+        if (res.data.userProfiles && res.data.userProfiles.length > 0) {
+          setSystemUsers(res.data.userProfiles);
+        }
+        if (res.data.holidays && res.data.holidays.length > 0) {
+          setHolidays(res.data.holidays);
+        }
+        if (res.data.chatMessages && res.data.chatMessages.length > 0) {
+          setChatMessages(res.data.chatMessages);
+        }
+        if (res.data.adminNotifications && res.data.adminNotifications.length > 0) {
+          setAdminNotifications(res.data.adminNotifications);
+        }
+
+        if (showFeedback) {
+          showToast('Đã đồng bộ dữ liệu mới nhất từ Supabase Cloud Database!', 'success');
+        }
+        return true;
+      } else {
+        setSupabaseConnected(false);
+        if (showFeedback) {
+          showToast(res.error || 'Không thể tải dữ liệu từ Supabase', 'error');
+        }
+        return false;
+      }
+    } catch (e: any) {
+      setSupabaseConnected(false);
+      console.warn('Lỗi loadDataFromSupabase:', e);
+      if (showFeedback) {
+        showToast('Lỗi kết nối Supabase Cloud: ' + (e?.message || ''), 'error');
+      }
+      return false;
+    } finally {
+      setSupabaseLoading(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    if (isSupabaseConfigured()) {
+      loadDataFromSupabase(false);
+    }
+  }, [loadDataFromSupabase]);
+
+  const testSupabase = useCallback(async () => {
+    setSupabaseLoading(true);
+    const result = await testSupabaseConnection();
+    setSupabaseLoading(false);
+    if (result.success) {
+      setSupabaseConnected(true);
+      showToast(result.message, 'success');
+    } else {
+      setSupabaseConnected(false);
+      showToast(result.message, 'error');
+    }
+    return result;
+  }, [showToast]);
+
+  const saveSupabaseSettings = useCallback(async (url: string, anonKey: string) => {
+    saveSupabaseConfig(url, anonKey);
+    setSupabaseConfigState({ url: url.trim(), anonKey: anonKey.trim() });
+    
+    if (url && anonKey) {
+      setSupabaseLoading(true);
+      const testRes = await testSupabaseConnection();
+      setSupabaseLoading(false);
+      if (testRes.success) {
+        setSupabaseConnected(true);
+        showToast('Cấu hình Supabase đã được lưu và kết nối thành công!', 'success');
+        await loadDataFromSupabase(false);
+        return { success: true, message: 'Kết nối Supabase thành công!' };
+      } else {
+        setSupabaseConnected(false);
+        showToast('Đã lưu cấu hình nhưng kiểm tra kết nối thất bại: ' + testRes.message, 'warning');
+        return { success: false, message: testRes.message };
+      }
+    } else {
+      setSupabaseConnected(false);
+      showToast('Đã xóa thông tin Supabase.', 'info');
+      return { success: true, message: 'Đã xóa cấu hình' };
+    }
+  }, [loadDataFromSupabase, showToast]);
+
+  const clearSupabaseSettings = useCallback(() => {
+    clearSupabaseConfig();
+    setSupabaseConfigState({ url: '', anonKey: '' });
+    setSupabaseConnected(false);
+    showToast('Đã ngắt kết nối và xóa cấu hình Supabase.', 'info');
+  }, [showToast]);
+
+  const seedSupabaseDatabase = useCallback(async () => {
+    if (!isSupabaseConfigured()) {
+      showToast('Vui lòng nhập Supabase Project URL và Anon Key trước!', 'error');
+      return { success: false, message: 'Chưa cấu hình Supabase', count: 0 };
+    }
+    setSupabaseLoading(true);
+    const res = await seedCompleteDatabase({
+      facilities,
+      shifts,
+      coaches,
+      classes,
+      students,
+      sessions,
+      payments,
+      userProfiles: systemUsers,
+      holidays,
+      chatMessages,
+      adminNotifications
+    });
+    setSupabaseLoading(false);
+    if (res.success) {
+      setSupabaseConnected(true);
+      const now = new Date();
+      setSupabaseLastSync(now.toLocaleTimeString('vi-VN') + ' ' + now.toLocaleDateString('vi-VN'));
+      showToast(res.message, 'success');
+    } else {
+      showToast(res.message, 'error');
+    }
+    return res;
+  }, [facilities, shifts, coaches, classes, students, sessions, payments, systemUsers, holidays, chatMessages, adminNotifications, showToast]);
+
+  const refreshDataFromSupabase = useCallback(async () => {
+    return await loadDataFromSupabase(true);
+  }, [loadDataFromSupabase]);
+
   const navigate = (tab: string, id: string | null = null, source?: string) => {
     if (tab === 'classes') {
       if (id) {
@@ -675,32 +878,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateUserProfile = (updates: Partial<UserProfile>) => {
-    setCurrentUser(prev => {
-      const updated = { ...prev, ...updates };
-      try {
-        if (updated.email) {
-          localStorage.setItem('badminton_current_user_email', updated.email);
-        }
-      } catch {}
-      return updated;
-    });
+    const updatedUser = { ...currentUser, ...updates };
+    setCurrentUser(updatedUser);
+    try {
+      if (updatedUser.email) {
+        localStorage.setItem('badminton_current_user_email', updatedUser.email);
+      }
+    } catch {}
 
     setSystemUsers(prev =>
       prev.map(u => (u.id === currentUser.id ? { ...u, ...updates } : u))
     );
+    syncSingleUserProfile(updatedUser);
 
     // Đồng bộ sang bảng Huấn Luyện Viên nếu user này là Coach
     if (currentUser.coachId) {
       setCoaches(prev =>
         prev.map(c => {
           if (c.id === currentUser.coachId) {
-            return {
+            const updatedCoach = {
               ...c,
               name: updates.name || c.name,
               phone: updates.phone || c.phone,
               email: updates.email ? updates.email.toLowerCase().trim() : c.email,
               avatar: updates.avatar || c.avatar
             };
+            syncSingleCoach(updatedCoach);
+            return updatedCoach;
           }
           return c;
         })
@@ -1616,6 +1820,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }),
         newHoliday
       ]);
+      syncSingleHoliday(newHoliday);
 
       const rangeLabel = sDate === eDate ? sDate : `từ ${sDate} đến ${eDate}`;
       showToast(
@@ -1635,6 +1840,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     const hol = holidays.find(h => h.id === holidayId);
     setHolidays(prev => prev.filter(h => h.id !== holidayId));
+    deleteDatabaseRecord('holidays', holidayId);
     showToast(`Đã hủy ngày nghỉ lễ ${hol ? hol.name : ''}.`, 'info');
   }, [currentUser, holidays, showToast]);
 
@@ -2125,6 +2331,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       code: newCode
     };
     setFacilities(prev => [...prev, newFacility]);
+    syncSingleFacility(newFacility);
     showToast(`Đã thêm sân mới: ${newFacility.name}`, 'success');
   };
 
@@ -2133,7 +2340,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast('Chỉ Ban Quản Trị (Admin) mới có quyền sửa thông tin sân!', 'error');
       return;
     }
-    setFacilities(prev => prev.map(f => (f.id === id ? { ...f, ...updates } : f)));
+    setFacilities(prev => prev.map(f => {
+      if (f.id === id) {
+        const updated = { ...f, ...updates };
+        syncSingleFacility(updated);
+        return updated;
+      }
+      return f;
+    }));
     showToast('Đã cập nhật thông tin sân!', 'success');
   };
 
@@ -2143,6 +2357,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
     setFacilities(prev => prev.filter(f => f.id !== id));
+    deleteDatabaseRecord('facilities', id);
     showToast('Đã xoá sân khỏi hệ thống!', 'info');
   };
 
@@ -2159,6 +2374,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: newId
     };
     setCourts(prev => [...prev, newCourt]);
+    syncSingleFacility(newCourt);
     showToast(`Đã thêm sân mới: ${newCourt.name} (${newCourt.facilityName})`, 'success');
   };
 
@@ -2167,7 +2383,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast('Chỉ Ban Quản Trị (Admin) mới có quyền sửa thông tin sân!', 'error');
       return;
     }
-    setCourts(prev => prev.map(c => (c.id === id ? { ...c, ...updates } : c)));
+    setCourts(prev => prev.map(c => {
+      if (c.id === id) {
+        const updated = { ...c, ...updates };
+        syncSingleFacility(updated);
+        return updated;
+      }
+      return c;
+    }));
     showToast('Đã cập nhật thông tin sân!', 'success');
   };
 
@@ -2177,6 +2400,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
     setCourts(prev => prev.filter(c => c.id !== id));
+    deleteDatabaseRecord('facilities', id);
     showToast('Đã xoá sân!', 'info');
   };
 
@@ -2195,6 +2419,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       code: newCode
     };
     setShifts(prev => [...prev, newShift]);
+    syncSingleShift(newShift);
     showToast(`Đã tạo ca học mới: ${newShift.name}`, 'success');
   };
 
@@ -2203,7 +2428,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast('Chỉ Ban Quản Trị (Admin) mới có quyền sửa ca học!', 'error');
       return;
     }
-    setShifts(prev => prev.map(s => (s.id === id ? { ...s, ...updates } : s)));
+    setShifts(prev => prev.map(s => {
+      if (s.id === id) {
+        const updated = { ...s, ...updates };
+        syncSingleShift(updated);
+        return updated;
+      }
+      return s;
+    }));
     showToast('Đã cập nhật ca học!', 'success');
   };
 
@@ -2213,6 +2445,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
     setShifts(prev => prev.filter(s => s.id !== id));
+    deleteDatabaseRecord('shifts', id);
     showToast('Đã xoá ca học!', 'info');
   };
 
@@ -2224,16 +2457,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: newId
     };
     setSessions(prev => [newSession, ...prev]);
+    syncSingleSession(newSession);
     showToast(`Đã sắp lịch ca học thành công: ${newSession.className} - ${newSession.date}!`, 'success');
   };
 
   const editSession = (id: string, updates: Partial<SessionSchedule>) => {
-    setSessions(prev => prev.map(s => (s.id === id ? { ...s, ...updates } : s)));
+    setSessions(prev => prev.map(s => {
+      if (s.id === id) {
+        const updated = { ...s, ...updates };
+        syncSingleSession(updated);
+        return updated;
+      }
+      return s;
+    }));
     showToast('Đã cập nhật lịch ca học!', 'success');
   };
 
   const deleteSession = (id: string) => {
     setSessions(prev => prev.filter(s => s.id !== id));
+    deleteDatabaseRecord('sessions', id);
     if (id.startsWith('SES-CLS_')) {
       const classId = id.replace('SES-', '');
       if (classId in dailyCoachAssignments) {
@@ -3454,7 +3696,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           targetStudentId = p.studentId || '';
           studentName = p.studentName;
           amountStr = p.amount.toLocaleString('vi-VN') + 'đ';
-          return {
+          const updatedPayment: PaymentItem = {
             ...p,
             status: 'Paid',
             paidDate: todayStr,
@@ -3462,6 +3704,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             collectorName: currentUser.name,
             note: note ? (p.note ? `${p.note} | ${note}` : note) : p.note
           };
+          syncSinglePayment(updatedPayment);
+          return updatedPayment;
         }
         return p;
       })
@@ -3471,10 +3715,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setStudents(prev =>
         prev.map(s => {
           if (s.id === targetStudentId) {
-            return {
+            const updatedStudent: Student = {
               ...s,
               paymentStatus: 'Paid'
             };
+            syncSingleStudent(updatedStudent);
+            return updatedStudent;
           }
           return s;
         })
@@ -3493,6 +3739,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       code: `PAY-2026-${String(nextNum).padStart(4, '0')}`
     };
     setPayments(prev => [newPayment, ...prev]);
+    syncSinglePayment(newPayment);
     showToast(`Đã tạo phiếu thu ${newPayment.code} thành công!`, 'success');
   };
 
@@ -3535,16 +3782,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setPayments(prev => [newPayment, ...prev]);
+    syncSinglePayment(newPayment);
 
     // If tuition, update student payment status
     if (data.studentId && data.paymentType === 'Tuition') {
       setStudents(prev =>
         prev.map(s => {
           if (s.id === data.studentId) {
-            return {
+            const updatedStudent: Student = {
               ...s,
               paymentStatus: 'Paid'
             };
+            syncSingleStudent(updatedStudent);
+            return updatedStudent;
           }
           return s;
         })
@@ -3616,7 +3866,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStudents(prev =>
       prev.map(s => {
         if (s.id === studentId) {
-          return {
+          const updatedStudent: Student = {
             ...s,
             specificDates: finalDates,
             packageSessions: newPackageSessions,
@@ -3626,6 +3876,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             scheduleConfirmedAt: new Date().toISOString(),
             scheduleConfirmedBy: currentUser.name
           };
+          syncSingleStudent(updatedStudent);
+          return updatedStudent;
         }
         return s;
       })
@@ -3636,7 +3888,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setAdminNotifications(prev =>
-      prev.map(n => (n.studentId === studentId ? { ...n, status: 'confirmed' } : n))
+      prev.map(n => {
+        if (n.studentId === studentId) {
+          const updatedNotif = { ...n, status: 'confirmed' as const };
+          syncSingleAdminNotification(updatedNotif);
+          return updatedNotif;
+        }
+        return n;
+      })
     );
 
     try {
@@ -3650,13 +3909,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const rejectStudentSchedule = (studentId: string) => {
     setAdminNotifications(prev => prev.filter(n => n.studentId !== studentId));
+    deleteDatabaseRecord('admin_notifications', studentId);
     setStudents(prev =>
       prev.map(s => {
         if (s.id === studentId) {
-          return {
+          const updatedStudent: Student = {
             ...s,
             scheduleStatus: 'pending_admin'
           };
+          syncSingleStudent(updatedStudent);
+          return updatedStudent;
         }
         return s;
       })
@@ -3712,6 +3974,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     
     setStudents(prev => [newStudent, ...prev]);
+    syncSingleStudent(newStudent);
 
     // Automatically generate tuition payment bill for the student
     const nextPayNum = payments.length + 1;
@@ -3736,17 +3999,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       note: `Học phí ${packageSessions} buổi x ${sessionUnitPrice.toLocaleString('vi-VN')}đ/buổi`
     };
     setPayments(prev => [newPayment, ...prev]);
+    syncSinglePayment(newPayment);
     
     // update class student list
     if (studentData.classId) {
       setClasses(prev =>
         prev.map(c => {
           if (c.id === studentData.classId) {
-            return {
+            const updatedClass = {
               ...c,
               currentStudentsCount: c.currentStudentsCount + 1,
               studentIds: [...c.studentIds, newId]
             };
+            syncSingleClass(updatedClass);
+            return updatedClass;
           }
           return c;
         })
@@ -3771,6 +4037,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createdAt: new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
       };
       setAdminNotifications(prev => [newAdminNotif, ...prev]);
+      syncSingleAdminNotification(newAdminNotif);
       showToast(`🔔 Đã thêm học viên ${newStudent.name}! Đã gửi yêu cầu lưu lịch đến Admin Hệ Thống.`, 'info');
     } else {
       if (specificDates.length > 0) {
@@ -3782,25 +4049,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const editStudent = (id: string, updates: Partial<Student>) => {
     setStudents(prev =>
-      prev.map(s => (s.id === id ? { ...s, ...updates } : s))
+      prev.map(s => {
+        if (s.id === id) {
+          const updated = { ...s, ...updates };
+          syncSingleStudent(updated);
+          return updated;
+        }
+        return s;
+      })
     );
     if (updates.classId !== undefined) {
       setClasses(prev =>
         prev.map(c => {
           if (updates.classId && c.id === updates.classId) {
             if (!c.studentIds.includes(id)) {
-              return {
+              const updatedClass = {
                 ...c,
                 currentStudentsCount: c.currentStudentsCount + 1,
                 studentIds: [...c.studentIds, id]
               };
+              syncSingleClass(updatedClass);
+              return updatedClass;
             }
           } else if (c.studentIds.includes(id)) {
-            return {
+            const updatedClass = {
               ...c,
               currentStudentsCount: Math.max(0, c.currentStudentsCount - 1),
               studentIds: c.studentIds.filter(sid => sid !== id)
             };
+            syncSingleClass(updatedClass);
+            return updatedClass;
           }
           return c;
         })
@@ -3811,6 +4089,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteStudent = (id: string) => {
     setStudents(prev => prev.filter(s => s.id !== id));
+    deleteDatabaseRecord('students', id);
     showToast('Đã xoá học viên khỏi hệ thống!', 'info');
   };
 
@@ -4034,18 +4313,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       studentIds: []
     };
     setClasses(prev => [...prev, newClass]);
+    syncSingleClass(newClass);
     showToast(`Đã tạo lớp học mới: ${newClass.name} (${newCode})`, 'success');
   };
 
   const editClass = (id: string, updates: Partial<BadmintonClass>) => {
     setClasses(prev =>
-      prev.map(c => (c.id === id ? { ...c, ...updates } : c))
+      prev.map(c => {
+        if (c.id === id) {
+          const updated = { ...c, ...updates };
+          syncSingleClass(updated);
+          return updated;
+        }
+        return c;
+      })
     );
     showToast('Đã cập nhật thông tin lớp học!', 'success');
   };
 
   const deleteClass = (id: string) => {
     setClasses(prev => prev.filter(c => c.id !== id));
+    deleteDatabaseRecord('classes', id);
     showToast('Đã xoá lớp học!', 'info');
   };
 
@@ -4062,6 +4350,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       totalStudents: 0
     };
     setCoaches(prev => [...prev, newCoach]);
+    syncSingleCoach(newCoach);
 
     // Tạo luôn UserProfile tương ứng để HLV có thể đăng nhập bằng email
     const newCoachUser: UserProfile = {
@@ -4081,25 +4370,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
       return [...filtered, newCoachUser];
     });
+    syncSingleUserProfile(newCoachUser);
 
     showToast(`Đã thêm HLV mới: ${newCoach.name} (Email: ${newCoach.email})`, 'success');
   };
 
   const editCoach = (id: string, updates: Partial<Coach>) => {
     setCoaches(prev =>
-      prev.map(c => (c.id === id ? { ...c, ...updates } : c))
+      prev.map(c => {
+        if (c.id === id) {
+          const updated = { ...c, ...updates };
+          syncSingleCoach(updated);
+          return updated;
+        }
+        return c;
+      })
     );
     // Đồng bộ sang UserProfile nếu HLV đổi tên hoặc đổi email
     setSystemUsers(prev =>
       prev.map(u => {
         if (u.coachId === id) {
-          return {
+          const updatedUser: UserProfile = {
             ...u,
             name: updates.name || u.name,
             email: updates.email ? updates.email.toLowerCase().trim() : u.email,
             phone: updates.phone || u.phone,
             avatar: updates.avatar || u.avatar
           };
+          syncSingleUserProfile(updatedUser);
+          return updatedUser;
         }
         return u;
       })
@@ -4235,6 +4534,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setChatMessages(prev => [...prev, newMsg]);
+    syncSingleChatMessage(newMsg);
 
     // 3. Tự động gửi Email thông báo và tạo In-app Notification khi có người được tag tên (@)
     if (targetUsersToNotify.length > 0) {
@@ -4315,10 +4615,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         showToast(`Đã thả biểu cảm ${emoji} (${label})!`, 'success');
 
-        return {
+        const updatedMsg = {
           ...msg,
           reactions: [...msg.reactions, newReaction]
         };
+        syncSingleChatMessage(updatedMsg);
+        return updatedMsg;
       })
     );
   };
@@ -4328,8 +4630,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast('Chỉ Quản trị viên (Admin) mới có quyền xóa tin nhắn!', 'error');
       return;
     }
-    setChatMessages(prev => prev.filter(m => m.id !== messageId));
-    showToast('Đã xóa tin nhắn.', 'info');
+    setChatMessages(prev => prev.filter(msg => msg.id !== messageId));
+    deleteDatabaseRecord('chat_messages', messageId);
+    showToast('Đã xóa tin nhắn khỏi Kênh Trao Đổi!', 'info');
   };
 
   const pendingScheduleCount = useMemo(() => {
@@ -4452,7 +4755,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         holidays,
         declareHoliday,
         removeHoliday,
-        isHoliday
+        isHoliday,
+        supabaseConfigured: isSupabaseConfigured(),
+        supabaseConnected,
+        supabaseLoading,
+        supabaseLastSync,
+        supabaseUrl: supabaseConfigState.url,
+        supabaseAnonKey: supabaseConfigState.anonKey,
+        testSupabase,
+        saveSupabaseSettings,
+        clearSupabaseSettings,
+        seedSupabaseDatabase,
+        refreshDataFromSupabase
       }}
     >
       {children}
