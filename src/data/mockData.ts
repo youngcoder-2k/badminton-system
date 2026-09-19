@@ -1,5 +1,6 @@
 import {
   AdminNotification,
+  AttendanceRecordItem,
   BadmintonClass,
   ChatMessage,
   ChatReaction,

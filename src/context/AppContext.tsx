@@ -35,6 +35,7 @@ import {
   SessionAttendance,
   ShiftInfo,
   Student,
+  StudentAttendanceHistoryItem,
   UserProfile,
   UserRole
 } from '../types';
@@ -366,6 +367,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [classesDate, setClassesDate] = useState<string>('2026-08-28');
   const [classesShiftId, setClassesShiftId] = useState<string>('ALL');
   const [classesCoachId, setClassesCoachId] = useState<string>('ALL');
+  const [classesSearchQuery, setClassesSearchQuery] = useState<string>('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
   const [emailLogs, setEmailLogs] = useState<EmailNotificationLog[]>(() => {
     try {
