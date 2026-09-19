@@ -507,19 +507,28 @@ export const AttendanceView: React.FC = () => {
     return student.status === 'Studying';
   });
 
-  // Check if student attendance is already completed by coach (or completed in general)
+  // 3-Tier Workflow Status Flags
   const isStudentAttendanceDone = Boolean(targetSession?.attendanceDone);
   const isCoachAttendanceDone = Boolean(targetSession?.coachAttendanceDone);
+  const isManagerReviewed = Boolean(targetSession?.managerReviewed || targetSession?.coachAttendanceDone);
+  const isAdminEdited = Boolean(targetSession?.adminEdited);
   const isAttendedByCoach = Boolean(targetSession?.attendanceDone && (targetSession.attendedByRole === 'COACH' || !targetSession.attendedByRole));
 
-  // Khi đã bấm điểm danh rồi thì HLV và Quản lý cơ sở KHÔNG sửa được nữa, chỉ Admin mới có quyền cập nhật lại điểm danh!
-  const isAttendedLocked = Boolean(!isAdmin && isStudentAttendanceDone);
+  // Khóa thao tác theo phân quyền 3 cấp:
+  // 1. Huấn luyện viên: Chỉ điểm danh học viên trong ngày hôm nay. Nếu đã bấm gửi rồi thì khóa lại chờ QL cơ sở duyệt.
+  const isCoachLocked = Boolean(isCoach && (!isSelectedDateToday || isStudentAttendanceDone));
 
-  // Khóa thao tác đối với HLV và Quản lý cơ sở:
-  // 1. Không phải hôm nay (đối với HLV và QL cơ sở)
-  // 2. Hoặc ca học đã được điểm danh xong (chỉ Admin mới có quyền sửa lại)
-  const isCoachRestricted = Boolean(isCoach && (!isSelectedDateToday || isStudentAttendanceDone));
-  const isFacilityManagerLocked = Boolean(isFacilityManager && (!isSelectedDateToday || isStudentAttendanceDone));
+  // 2. Quản lý cơ sở: Kiểm tra học viên & chấm công HLV trong ngày hôm nay. Nếu ca học đã được duyệt & chốt xong thì khóa lại (chỉ Admin mới có quyền sửa).
+  const isFacilityManagerLocked = Boolean(isFacilityManager && (!isSelectedDateToday || isManagerReviewed));
+
+  // 3. Khóa chỉnh sửa danh sách học viên
+  const isStudentRosterLocked = Boolean(isSelectedDateFuture || (isCoach && isCoachLocked) || (isFacilityManager && isFacilityManagerLocked));
+
+  // 4. Khóa chấm công Huấn luyện viên (HLV không tự chấm công; QL cơ sở chấm công khi chưa chốt; Admin toàn quyền mọi lúc)
+  const isCoachRosterLocked = Boolean(isSelectedDateFuture || isCoach || (isFacilityManager && isFacilityManagerLocked));
+
+  // Tương thích ngược
+  const isAttendedLocked = Boolean(!isAdmin && (isCoach ? isCoachLocked : isFacilityManagerLocked));
 
   // Local state for attendance choices: { [studentId]: 'Present' | 'Excused' | 'Absent' }
   const [attendanceMap, setAttendanceMap] = useState<Record<string, AttendanceStatus>>({});
@@ -598,13 +607,26 @@ export const AttendanceView: React.FC = () => {
       return;
     }
 
-    if (isAttendedLocked) {
-      showToast('Điểm danh ca học này đã được xác nhận! HLV và Quản lý cơ sở không thể sửa lại, chỉ Admin mới có quyền cập nhật lại điểm danh.', 'warning');
+    if (isCoach && isCoachLocked) {
+      if (isStudentAttendanceDone) {
+        showToast('Bạn đã gửi điểm danh học viên cho ca này! Vui lòng chờ Quản lý cơ sở kiểm tra và chấm công.', 'warning');
+      } else {
+        showToast('HLV chỉ có thể điểm danh học viên trong ngày hôm nay.', 'warning');
+      }
       return;
     }
 
-    if (!isSelectedDateToday && !isAdmin) {
-      showToast('Đã qua ngày ca học! HLV và Quản lý cơ sở chỉ có thể điểm danh trong ngày hôm nay.', 'warning');
+    if (isFacilityManager && isFacilityManagerLocked) {
+      if (isManagerReviewed) {
+        showToast('Ca học này đã được duyệt và chốt! Chỉ Admin mới có quyền chỉnh sửa nếu có sai sót.', 'warning');
+      } else {
+        showToast('Quản lý cơ sở chỉ có thể duyệt và chốt ca học trong ngày hôm nay.', 'warning');
+      }
+      return;
+    }
+
+    if (!isAdmin && !isSelectedDateToday) {
+      showToast('Đã qua ngày ca học! Chỉ Admin mới có quyền cập nhật lại điểm danh quá khứ.', 'warning');
       return;
     }
 
@@ -640,13 +662,26 @@ export const AttendanceView: React.FC = () => {
       return;
     }
 
-    if (isAttendedLocked) {
-      showToast('Điểm danh ca học này đã được xác nhận! HLV và Quản lý cơ sở không thể sửa lại, chỉ Admin mới có quyền cập nhật lại điểm danh.', 'warning');
+    if (isCoach && isCoachLocked) {
+      if (isStudentAttendanceDone) {
+        showToast('Bạn đã gửi điểm danh học viên cho ca này! Vui lòng chờ Quản lý cơ sở kiểm tra và chấm công.', 'warning');
+      } else {
+        showToast('HLV chỉ có thể điểm danh học viên trong ngày hôm nay.', 'warning');
+      }
       return;
     }
 
-    if (!isSelectedDateToday && !isAdmin) {
-      showToast('Đã qua ngày ca học! HLV và Quản lý cơ sở chỉ có thể điểm danh trong ngày hôm nay.', 'warning');
+    if (isFacilityManager && isFacilityManagerLocked) {
+      if (isManagerReviewed) {
+        showToast('Ca học này đã được duyệt và chốt! Chỉ Admin mới có quyền chỉnh sửa nếu có sai sót.', 'warning');
+      } else {
+        showToast('Quản lý cơ sở chỉ có thể duyệt và chốt ca học trong ngày hôm nay.', 'warning');
+      }
+      return;
+    }
+
+    if (!isAdmin && !isSelectedDateToday) {
+      showToast('Đã qua ngày ca học! Chỉ Admin mới có quyền cập nhật lại điểm danh quá khứ.', 'warning');
       return;
     }
     const updated: Record<string, AttendanceStatus> = {};
@@ -716,13 +751,18 @@ export const AttendanceView: React.FC = () => {
       return;
     }
 
-    if (isAttendedLocked) {
-      showToast('Điểm danh ca học này đã được xác nhận! HLV và Quản lý cơ sở không thể sửa lại, chỉ Admin mới có quyền cập nhật lại điểm danh.', 'warning');
+    if (isCoach && isCoachLocked) {
+      showToast('Bạn đã gửi điểm danh học viên cho ca này! Vui lòng chờ Quản lý cơ sở kiểm tra và chấm công.', 'warning');
       return;
     }
 
-    if (!isSelectedDateToday && !isAdmin) {
-      showToast('Đã qua ngày ca học! HLV và Quản lý cơ sở chỉ có thể điểm danh trong ngày hôm nay.', 'warning');
+    if (isFacilityManager && isFacilityManagerLocked) {
+      showToast('Ca học này đã được Quản lý cơ sở duyệt và chốt! Chỉ Admin mới có quyền sửa đổi.', 'warning');
+      return;
+    }
+
+    if (!isAdmin && !isSelectedDateToday) {
+      showToast('Đã qua ngày ca học! Chỉ Admin mới có quyền cập nhật lại điểm danh quá khứ.', 'warning');
       return;
     }
 
@@ -850,8 +890,8 @@ export const AttendanceView: React.FC = () => {
       showToast('Huấn luyện viên không có quyền thêm học viên học bù!', 'error');
       return;
     }
-    if (isAttendedLocked) {
-      showToast('Điểm danh ca học này đã được xác nhận. Chỉ Admin mới có quyền thêm học viên học bù!', 'warning');
+    if (isFacilityManager && isFacilityManagerLocked) {
+      showToast('Ca học này đã được chốt. Chỉ Admin mới có quyền thêm học viên học bù!', 'warning');
       return;
     }
     if (selectedMakeupStudentIds.length === 0) return;
@@ -944,32 +984,53 @@ export const AttendanceView: React.FC = () => {
                 <Clock className="w-4 h-4 text-slate-400 shrink-0" />
                 <span>CHƯA ĐẾN NGÀY ĐIỂM DANH (CHỈ THÊM HỌC BÙ)</span>
               </div>
-            ) : isAttendedLocked ? (
-              <div
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-600 font-bold text-xs sm:text-sm rounded-xl border border-slate-200 shadow-2xs select-none cursor-not-allowed"
-                title="Điểm danh ca học này đã được xác nhận. HLV và Quản lý cơ sở không có quyền sửa, chỉ Admin mới có quyền cập nhật lại điểm danh!"
-              >
-                <Lock className="w-4 h-4 text-slate-400 shrink-0" />
-                <span>ĐÃ ĐIỂM DANH (CHỈ ADMIN MỚI CÓ QUYỀN SỬA)</span>
-              </div>
-            ) : (!isAdmin && !isSelectedDateToday) ? (
-              <div
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-500 font-bold text-xs sm:text-sm rounded-xl border border-slate-200 shadow-2xs select-none cursor-not-allowed"
-                title="Chỉ có thể điểm danh trong ngày hôm nay"
-              >
-                <Lock className="w-4 h-4 text-slate-400 shrink-0" />
-                <span>CHẾ ĐỘ XEM (CHỈ ĐƯỢC ĐIỂM DANH HÔM NAY)</span>
-              </div>
+            ) : isCoach ? (
+              isStudentAttendanceDone ? (
+                <div
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-50 text-emerald-800 font-bold text-xs sm:text-sm rounded-xl border border-emerald-200 shadow-2xs select-none"
+                  title="Bạn đã gửi điểm danh học viên cho ca này. Vui lòng chờ Quản lý cơ sở kiểm tra và chấm công!"
+                >
+                  <CheckCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>ĐÃ GỬI ĐIỂM DANH (CHỜ QL CHẤM CÔNG)</span>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setIsConfirmModalOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#10B981] hover:bg-emerald-600 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer whitespace-nowrap"
+                >
+                  <CheckCheck className="w-4 h-4 shrink-0" />
+                  <span>XÁC NHẬN ĐIỂM DANH HỌC VIÊN</span>
+                </button>
+              )
+            ) : isFacilityManager ? (
+              isFacilityManagerLocked ? (
+                <div
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-600 font-bold text-xs sm:text-sm rounded-xl border border-slate-200 shadow-2xs select-none cursor-not-allowed"
+                  title="Ca học này đã được Quản lý cơ sở duyệt và chốt. Chỉ Admin mới có quyền sửa đổi nếu có sai sót!"
+                >
+                  <Lock className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span>ĐÃ DUYỆT & CHỐT (CHỈ ADMIN MỚI ĐƯỢC SỬA)</span>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setIsConfirmModalOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer whitespace-nowrap"
+                >
+                  <Shield className="w-4 h-4 shrink-0" />
+                  <span>DUYỆT & CHỐT CA HỌC (CHẤM CÔNG HLV)</span>
+                </button>
+              )
             ) : (
+              /* ADMIN MODE */
               <button
                 onClick={() => setIsConfirmModalOpen(true)}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#10B981] hover:bg-emerald-600 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer whitespace-nowrap"
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer whitespace-nowrap"
               >
                 <CheckCheck className="w-4 h-4 shrink-0" />
                 <span>
-                  {isEverythingAttended
-                    ? 'CẬP NHẬT ĐIỂM DANH'
-                    : 'DUYỆT ĐIỂM DANH'}
+                  {targetSession?.coachAttendanceDone || targetSession?.attendanceDone
+                    ? 'LƯU ĐIỀU CHỈNH / SỬA SAI SÓT (ADMIN)'
+                    : 'DUYỆT ĐIỂM DANH (ADMIN)'}
                 </span>
               </button>
             )}
@@ -1035,45 +1096,6 @@ export const AttendanceView: React.FC = () => {
         <MonthlyAttendanceMatrix />
       ) : (
         <>
-
-
-
-      {/* Banner thông báo khi xem ngày mai hoặc các ngày trong tương lai */}
-      {isSelectedDateFuture && (
-        <div className="py-2.5 px-4 bg-sky-50/95 border border-sky-200 rounded-2xl flex items-center gap-2.5 text-xs text-sky-950 shadow-2xs animate-in fade-in">
-          <div className="w-5 h-5 rounded-lg bg-sky-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
-            <Calendar className="w-3.5 h-3.5" />
-          </div>
-          <span className="font-semibold leading-relaxed flex-1">
-            <strong>Chưa đến ngày ca học:</strong> Hệ thống chỉ cho phép điểm danh trong ngày hôm nay. Đối với ngày mai hoặc các ngày trong tương lai, bạn chỉ có thể thao tác <strong>Thêm học bù</strong> cho học viên.
-          </span>
-        </div>
-      )}
-
-      {/* Banner thông báo khi HLV hoặc QL cơ sở xem ca học đã điểm danh hoặc xem ngày khác hôm nay */}
-      {isAttendedLocked && (
-        <div className="py-2.5 px-4 bg-amber-50/95 border border-amber-200 rounded-2xl flex items-center gap-2.5 text-xs text-amber-950 shadow-2xs animate-in fade-in">
-          <div className="w-5 h-5 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
-            <Lock className="w-3.5 h-3.5" />
-          </div>
-          <span className="font-semibold leading-relaxed flex-1">
-            <strong>Chế độ chỉ xem:</strong> Ca học này đã được xác nhận điểm danh{targetSession?.attendedAt ? ` lúc ${targetSession.attendedAt}` : ''}. Huấn luyện viên và Quản lý cơ sở không có quyền chỉnh sửa. Chỉ Admin mới có quyền cập nhật lại điểm danh.
-          </span>
-        </div>
-      )}
-
-      {/* Banner thông báo cho Admin khi ca học đã được điểm danh */}
-      {isAdmin && isStudentAttendanceDone && (
-        <div className="py-2 px-3 sm:px-4 bg-emerald-50/90 border border-emerald-200/90 rounded-2xl flex items-center gap-2 text-xs text-emerald-950 shadow-2xs animate-in fade-in">
-          <div className="w-5 h-5 rounded-lg bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
-            <CheckCheck className="w-3.5 h-3.5" />
-          </div>
-          <span className="font-bold text-emerald-950">
-            Đã điểm danh lúc {targetSession?.attendedAt || 'trước đó'}. Bạn có thể thay đổi trạng thái và bấm "Cập nhật điểm danh" để lưu lại.
-          </span>
-        </div>
-      )}
-
       {/* Date & Facility & Shift Selection Bar */}
       <div className="p-5 bg-white rounded-3xl border border-slate-100 shadow-xs space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1179,7 +1201,7 @@ export const AttendanceView: React.FC = () => {
           </div>
 
           {/* Quick Mark All Buttons for Students */}
-          {!isAttendedLocked && (isSelectedDateToday || isAdmin) && !isSelectedDateFuture && (
+          {!isStudentRosterLocked && (
             <div className="flex items-center gap-2 flex-wrap">
               <button
                 onClick={() => handleMarkAll('Present')}
@@ -1222,19 +1244,19 @@ export const AttendanceView: React.FC = () => {
         <div className="flex items-center justify-between px-1">
           <h2 className="text-xs font-extrabold text-[#0F172A] uppercase tracking-wider flex items-center gap-2">
             <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
-            <span>{isCoach ? 'Trạng thái chấm công ca dạy của bạn' : 'Danh sách HLV'}</span>
+            <span>{isCoach ? 'Trạng thái chấm công ca dạy của bạn (Do Quản lý cơ sở chấm)' : 'Chấm công Huấn Luyện Viên'}</span>
           </h2>
 
           {/* Progress Counter for Facility Manager & Admin */}
           {!isCoach && facilityCoachItems.length > 0 && (
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-500 hidden sm:inline">Tiến độ duyệt:</span>
+              <span className="text-xs font-bold text-slate-500 hidden sm:inline">Tiến độ chấm công:</span>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
                 facilityCoachItems.every(c => c.isAttended)
                   ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
                   : 'bg-amber-50 text-amber-900 border-amber-200'
               }`}>
-                {facilityCoachItems.filter(c => c.isAttended).length} / {facilityCoachItems.length} HLV đã duyệt
+                {facilityCoachItems.filter(c => c.isAttended).length} / {facilityCoachItems.length} HLV đã chấm
               </span>
             </div>
           )}
@@ -1282,8 +1304,8 @@ export const AttendanceView: React.FC = () => {
                       <div className="text-sm font-extrabold text-[#0F172A] truncate">
                         {item.coachName}
                       </div>
-                      <div className="text-[10px] text-slate-400 font-medium sm:hidden">
-                        Huấn luyện viên phụ trách
+                      <div className="text-[10px] text-slate-400 font-medium">
+                        {isCoach ? 'Huấn luyện viên phụ trách ca' : item.className || 'Huấn luyện viên phụ trách'}
                       </div>
                     </div>
                   </div>
@@ -1331,7 +1353,37 @@ export const AttendanceView: React.FC = () => {
                 </div>
 
                 {/* Right Actions / Status */}
-                {isAttended && !itemState.isEditing ? (
+                {isCoach ? (
+                  /* Read-only status for Coach: HLV không tự chấm công */
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {isAttended && rec ? (
+                      <div className={`px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 border ${
+                        rec.status === 'Present'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : rec.status === 'Late'
+                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                          : 'bg-rose-50 text-rose-800 border-rose-200'
+                      }`}>
+                        {rec.status === 'Present' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+                        {rec.status === 'Late' && <Clock className="w-3.5 h-3.5 text-amber-600" />}
+                        {rec.status === 'Absent' && <XCircle className="w-3.5 h-3.5 text-rose-600" />}
+                        <span>
+                          {rec.status === 'Present' ? 'QL ĐÃ CHẤM CÓ MẶT' : rec.status === 'Late' ? 'QL ĐÃ CHẤM ĐI MUỘN' : 'QL ĐÃ CHẤM VẮNG'}
+                        </span>
+                        {rec.checkedBy && (
+                          <span className="text-[10px] text-slate-400 font-normal">
+                            ({rec.checkedBy})
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="px-3 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                        <span>Chờ Quản lý cơ sở chấm công</span>
+                      </div>
+                    )}
+                  </div>
+                ) : isAttended && !itemState.isEditing ? (
                   <div className="hidden sm:flex items-center gap-1.5 shrink-0">
                     <div className={`px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1 border ${
                       rec?.status === 'Present'
@@ -1370,7 +1422,7 @@ export const AttendanceView: React.FC = () => {
                       </button>
                     )}
                   </div>
-                ) : (isAdmin || (!isCoach && !isFacilityManagerLocked && isSelectedDateToday)) ? (
+                ) : (!isCoachRosterLocked || isAdmin) ? (
                   <div className="w-full sm:w-auto shrink-0 flex items-center gap-1.5">
                     <div className="grid grid-cols-3 gap-1.5 w-full sm:w-auto flex-1">
                       <button
@@ -1476,10 +1528,16 @@ export const AttendanceView: React.FC = () => {
                 Chưa đến ngày điểm danh
               </span>
             )}
-            {!isSelectedDateFuture && isAttendedLocked && (
-              <span className="text-[10px] font-extrabold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 normal-case tracking-normal flex items-center gap-1">
-                <Lock className="w-3 h-3 text-amber-600" />
-                Đã điểm danh (Chỉ Admin mới có quyền sửa)
+            {!isSelectedDateFuture && isCoach && isStudentAttendanceDone && (
+              <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 normal-case tracking-normal flex items-center gap-1">
+                <CheckCheck className="w-3 h-3 text-emerald-600" />
+                Đã gửi điểm danh (Chờ QL chấm công)
+              </span>
+            )}
+            {!isSelectedDateFuture && isFacilityManager && isFacilityManagerLocked && (
+              <span className="text-[10px] font-extrabold text-indigo-800 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200 normal-case tracking-normal flex items-center gap-1">
+                <Lock className="w-3 h-3 text-indigo-600" />
+                Đã duyệt & chốt (Chỉ Admin mới được sửa)
               </span>
             )}
           </h2>
@@ -1504,7 +1562,7 @@ export const AttendanceView: React.FC = () => {
             const currentStatus = attendanceMap[student.id] || 'Present';
             const allowedLeaves = student.allowedLeaves ?? Math.floor(student.packageSessions / 4);
             const isOutOfLeaves = (student.usedLeaves || 0) >= allowedLeaves;
-            const isLocked = isSelectedDateFuture || (!isAdmin && (!isSelectedDateToday || isAttendedLocked));
+            const isLocked = isStudentRosterLocked;
 
             return (
               <div
@@ -1591,9 +1649,11 @@ export const AttendanceView: React.FC = () => {
                     title={
                       isSelectedDateFuture
                         ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
-                        : isAttendedLocked
-                        ? 'Điểm danh ca học này đã được xác nhận. HLV và Quản lý không có quyền sửa, chỉ Admin mới có quyền cập nhật lại điểm danh!'
-                        : !isSelectedDateToday
+                        : isCoach && isStudentAttendanceDone
+                        ? 'Bạn đã gửi điểm danh học viên cho ca này! Chờ Quản lý cơ sở kiểm tra và chấm công.'
+                        : isFacilityManager && isFacilityManagerLocked
+                        ? 'Ca học này đã được duyệt và chốt. Chỉ Admin mới có quyền sửa!'
+                        : !isAdmin && !isSelectedDateToday
                         ? 'Chỉ có thể điểm danh trong ngày hôm nay'
                         : undefined
                     }
@@ -1632,9 +1692,11 @@ export const AttendanceView: React.FC = () => {
                     title={
                       isSelectedDateFuture
                         ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
-                        : isAttendedLocked
-                        ? 'Điểm danh ca học này đã được xác nhận. HLV và Quản lý không có quyền sửa, chỉ Admin mới có quyền cập nhật lại điểm danh!'
-                        : !isSelectedDateToday
+                        : isCoach && isStudentAttendanceDone
+                        ? 'Bạn đã gửi điểm danh học viên cho ca này! Chờ Quản lý cơ sở kiểm tra và chấm công.'
+                        : isFacilityManager && isFacilityManagerLocked
+                        ? 'Ca học này đã được duyệt và chốt. Chỉ Admin mới có quyền sửa!'
+                        : !isAdmin && !isSelectedDateToday
                         ? 'Chỉ có thể điểm danh trong ngày hôm nay'
                         : isOutOfLeaves
                         ? 'Học viên đã hết phép tháng, không thể chuyển sang Có phép (chỉ có thể chọn Vắng)'
@@ -1661,9 +1723,11 @@ export const AttendanceView: React.FC = () => {
                     title={
                       isSelectedDateFuture
                         ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
-                        : isAttendedLocked
-                        ? 'Điểm danh ca học này đã được xác nhận. HLV và Quản lý không có quyền sửa, chỉ Admin mới có quyền cập nhật lại điểm danh!'
-                        : !isSelectedDateToday
+                        : isCoach && isStudentAttendanceDone
+                        ? 'Bạn đã gửi điểm danh học viên cho ca này! Chờ Quản lý cơ sở kiểm tra và chấm công.'
+                        : isFacilityManager && isFacilityManagerLocked
+                        ? 'Ca học này đã được duyệt và chốt. Chỉ Admin mới có quyền sửa!'
+                        : !isAdmin && !isSelectedDateToday
                         ? 'Chỉ có thể điểm danh trong ngày hôm nay'
                         : undefined
                     }
@@ -1694,7 +1758,7 @@ export const AttendanceView: React.FC = () => {
             const mAllowedLeaves = fullStudent ? (fullStudent.allowedLeaves ?? Math.floor((fullStudent.packageSessions || 12) / 4)) : 3;
             const mUsedLeaves = fullStudent?.usedLeaves || 0;
             const mOutOfLeaves = fullStudent ? mUsedLeaves >= mAllowedLeaves : false;
-            const isLocked = isSelectedDateFuture || (!isAdmin && (!isSelectedDateToday || isAttendedLocked));
+            const isLocked = isStudentRosterLocked;
 
             return (
               <div
@@ -1744,7 +1808,7 @@ export const AttendanceView: React.FC = () => {
                       </span>
                     </span>
 
-                    {(isAdmin || (isFacilityManager && !isAttendedLocked)) && (
+                    {(isAdmin || (isFacilityManager && !isFacilityManagerLocked)) && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1778,9 +1842,11 @@ export const AttendanceView: React.FC = () => {
                       title={
                         isSelectedDateFuture
                           ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
-                          : isAttendedLocked
-                          ? 'Điểm danh ca học này đã được xác nhận. HLV và Quản lý không có quyền sửa, chỉ Admin mới có quyền cập nhật lại điểm danh!'
-                          : !isSelectedDateToday
+                          : isCoach && isStudentAttendanceDone
+                          ? 'Bạn đã gửi điểm danh học viên cho ca này! Chờ Quản lý cơ sở kiểm tra và chấm công.'
+                          : isFacilityManager && isFacilityManagerLocked
+                          ? 'Ca học này đã được duyệt và chốt. Chỉ Admin mới có quyền sửa!'
+                          : !isAdmin && !isSelectedDateToday
                           ? 'Chỉ có thể điểm danh trong ngày hôm nay'
                           : undefined
                       }
@@ -1809,9 +1875,11 @@ export const AttendanceView: React.FC = () => {
                       title={
                         isSelectedDateFuture
                           ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
-                          : isAttendedLocked
-                          ? 'Điểm danh ca học này đã được xác nhận. HLV và Quản lý không có quyền sửa, chỉ Admin mới có quyền cập nhật lại điểm danh!'
-                          : !isSelectedDateToday
+                          : isCoach && isStudentAttendanceDone
+                          ? 'Bạn đã gửi điểm danh học viên cho ca này! Chờ Quản lý cơ sở kiểm tra và chấm công.'
+                          : isFacilityManager && isFacilityManagerLocked
+                          ? 'Ca học này đã được duyệt và chốt. Chỉ Admin mới có quyền sửa!'
+                          : !isAdmin && !isSelectedDateToday
                           ? 'Chỉ có thể điểm danh trong ngày hôm nay'
                           : mOutOfLeaves
                           ? 'Học viên đã hết phép tháng, không thể chuyển sang Có phép (chỉ có thể chọn Vắng)'
@@ -1838,9 +1906,11 @@ export const AttendanceView: React.FC = () => {
                       title={
                         isSelectedDateFuture
                           ? 'Chưa đến ngày ca học! Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)'
-                          : isAttendedLocked
-                          ? 'Điểm danh ca học này đã được xác nhận. HLV và Quản lý không có quyền sửa, chỉ Admin mới có quyền cập nhật lại điểm danh!'
-                          : !isSelectedDateToday
+                          : isCoach && isStudentAttendanceDone
+                          ? 'Bạn đã gửi điểm danh học viên cho ca này! Chờ Quản lý cơ sở kiểm tra và chấm công.'
+                          : isFacilityManager && isFacilityManagerLocked
+                          ? 'Ca học này đã được duyệt và chốt. Chỉ Admin mới có quyền sửa!'
+                          : !isAdmin && !isSelectedDateToday
                           ? 'Chỉ có thể điểm danh trong ngày hôm nay'
                           : undefined
                       }
@@ -1851,7 +1921,7 @@ export const AttendanceView: React.FC = () => {
                   </div>
 
                   {/* Desktop delete button */}
-                  {(isAdmin || (isFacilityManager && !isAttendedLocked)) && (
+                  {(isAdmin || (isFacilityManager && !isFacilityManagerLocked)) && (
                     <button
                       type="button"
                       onClick={() => {
@@ -1871,61 +1941,108 @@ export const AttendanceView: React.FC = () => {
       )}
 
 
-      {/* Floating Bottom Bar on Mobile: Chế độ khóa cho HLV & QL khi đã điểm danh */}
-      {isAttendedLocked && !isSelectedDateFuture && (
-        <div className="fixed bottom-16 left-0 right-0 p-3 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 shadow-2xl z-30 sm:hidden flex items-center justify-between gap-2.5 px-4 text-white">
-          <div className="flex items-center gap-2 text-xs">
-            <Lock className="w-4 h-4 text-amber-400 shrink-0" />
-            <span className="font-semibold text-slate-200 text-xs">
-              Đã điểm danh • Chỉ Admin mới có quyền sửa
-            </span>
+      {/* Mobile Floating Action Bar */}
+      {!isTodayHoliday && (
+        isSelectedDateFuture ? (
+          !isCoach && (
+            <div className="fixed bottom-16 left-0 right-0 p-3 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-2xl z-30 sm:hidden flex items-center justify-between gap-3">
+              <div className="text-xs">
+                <span className="text-amber-600 block font-bold">Ngày mai / Tương lai</span>
+                <span className="text-slate-400 font-medium text-[11px]">
+                  Chưa đến ngày điểm danh
+                </span>
+              </div>
+              <button
+                onClick={() => setIsMakeupModalOpen(true)}
+                className="flex-1 py-2.5 px-4 bg-amber-500 active:scale-95 text-white font-bold text-xs rounded-xl shadow-md shadow-amber-900/20 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>THÊM HỌC BÙ</span>
+              </button>
+            </div>
+          )
+        ) : isCoach ? (
+          isStudentAttendanceDone ? (
+            <div className="fixed bottom-16 left-0 right-0 p-3 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 shadow-2xl z-30 sm:hidden flex items-center justify-between gap-2.5 px-4 text-white">
+              <div className="flex items-center gap-2 text-xs">
+                <CheckCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="font-semibold text-slate-200 text-xs">
+                  Đã gửi điểm danh • Chờ QL chấm công
+                </span>
+              </div>
+              <span className="text-[11px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-0.5 rounded-lg shrink-0">
+                {presentCount}/{classStudents.length + sessionMakeupStudents.length} Có mặt
+              </span>
+            </div>
+          ) : (
+            <div className="fixed bottom-16 left-0 right-0 p-3.5 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-2xl z-30 sm:hidden flex items-center justify-between gap-3">
+              <div className="text-xs">
+                <span className="text-slate-400 block font-semibold">Tiến độ ca:</span>
+                <span className="text-[#10B981] font-bold text-sm">
+                  {presentCount}/{classStudents.length + sessionMakeupStudents.length} HV
+                </span>
+              </div>
+              <button
+                onClick={() => setIsConfirmModalOpen(true)}
+                className="flex-1 py-2.5 px-4 bg-[#10B981] active:scale-95 text-white font-bold text-sm rounded-xl shadow-md shadow-emerald-900/20 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <CheckCheck className="w-4 h-4" />
+                <span>XÁC NHẬN ĐIỂM DANH HỌC VIÊN</span>
+              </button>
+            </div>
+          )
+        ) : isFacilityManager ? (
+          isFacilityManagerLocked ? (
+            <div className="fixed bottom-16 left-0 right-0 p-3 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 shadow-2xl z-30 sm:hidden flex items-center justify-between gap-2.5 px-4 text-white">
+              <div className="flex items-center gap-2 text-xs">
+                <Lock className="w-4 h-4 text-indigo-400 shrink-0" />
+                <span className="font-semibold text-slate-200 text-xs">
+                  Đã duyệt & chốt • Chỉ Admin mới được sửa
+                </span>
+              </div>
+              <span className="text-[11px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-0.5 rounded-lg shrink-0">
+                {presentCount}/{classStudents.length + sessionMakeupStudents.length} Có mặt
+              </span>
+            </div>
+          ) : (
+            <div className="fixed bottom-16 left-0 right-0 p-3.5 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-2xl z-30 sm:hidden flex items-center justify-between gap-3">
+              <div className="text-xs">
+                <span className="text-slate-400 block font-semibold">Chốt ca:</span>
+                <span className="text-indigo-600 font-bold text-sm">
+                  {facilityCoachItems.filter(c => c.isAttended).length}/{facilityCoachItems.length} HLV
+                </span>
+              </div>
+              <button
+                onClick={() => setIsConfirmModalOpen(true)}
+                className="flex-1 py-2.5 px-4 bg-indigo-600 active:scale-95 text-white font-bold text-sm rounded-xl shadow-md shadow-indigo-900/20 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Shield className="w-4 h-4" />
+                <span>DUYỆT & CHỐT CA HỌC</span>
+              </button>
+            </div>
+          )
+        ) : (
+          /* Admin Mobile Bar */
+          <div className="fixed bottom-16 left-0 right-0 p-3.5 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-2xl z-30 sm:hidden flex items-center justify-between gap-3">
+            <div className="text-xs">
+              <span className="text-slate-400 block font-semibold">Quyền Admin:</span>
+              <span className="text-purple-600 font-bold text-sm">
+                {presentCount}/{classStudents.length + sessionMakeupStudents.length} HV
+              </span>
+            </div>
+            <button
+              onClick={() => setIsConfirmModalOpen(true)}
+              className="flex-1 py-2.5 px-4 bg-purple-600 active:scale-95 text-white font-bold text-sm rounded-xl shadow-md shadow-purple-900/20 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <CheckCheck className="w-4 h-4" />
+              <span>
+                {targetSession?.coachAttendanceDone || targetSession?.attendanceDone
+                  ? 'LƯU ĐIỀU CHỈNH (ADMIN)'
+                  : 'DUYỆT ĐIỂM DANH (ADMIN)'}
+              </span>
+            </button>
           </div>
-          <span className="text-[11px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-0.5 rounded-lg shrink-0">
-            {presentCount}/{classStudents.length + sessionMakeupStudents.length} Có mặt
-          </span>
-        </div>
-      )}
-
-      {/* Floating Bottom Bar on Mobile for Instant 1-tap Save */}
-      {!isAttendedLocked && (isSelectedDateToday || isAdmin) && !isSelectedDateFuture && (
-        <div className="fixed bottom-16 left-0 right-0 p-3.5 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-2xl z-30 sm:hidden flex items-center justify-between gap-3">
-          <div className="text-xs">
-            <span className="text-slate-400 block font-semibold">Tiến độ ca:</span>
-            <span className="text-[#10B981] font-bold text-sm">
-              {presentCount}/{classStudents.length + sessionMakeupStudents.length} HV
-            </span>
-          </div>
-          <button
-            onClick={() => setIsConfirmModalOpen(true)}
-            className="flex-1 py-2.5 px-4 bg-[#10B981] active:scale-95 text-white font-bold text-sm rounded-xl shadow-md shadow-emerald-900/20 flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <CheckCheck className="w-4 h-4" />
-            <span>
-              {isEverythingAttended
-                ? 'CẬP NHẬT ĐIỂM DANH'
-                : 'DUYỆT ĐIỂM DANH'}
-            </span>
-          </button>
-        </div>
-      )}
-
-      {/* Floating Bottom Bar on Mobile for Future Date: Quick Add Makeup */}
-      {isSelectedDateFuture && !isCoach && (
-        <div className="fixed bottom-16 left-0 right-0 p-3 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-2xl z-30 sm:hidden flex items-center justify-between gap-3">
-          <div className="text-xs">
-            <span className="text-amber-600 block font-bold">Ngày mai / Tương lai</span>
-            <span className="text-slate-400 font-medium text-[11px]">
-              Chưa đến ngày điểm danh
-            </span>
-          </div>
-          <button
-            onClick={() => setIsMakeupModalOpen(true)}
-            className="flex-1 py-2.5 px-4 bg-amber-500 active:scale-95 text-white font-bold text-xs rounded-xl shadow-md shadow-amber-900/20 flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>THÊM HỌC BÙ</span>
-          </button>
-        </div>
+        )
       )}
         </>
       )}
@@ -1934,13 +2051,25 @@ export const AttendanceView: React.FC = () => {
       <Modal
         isOpen={isConfirmModalOpen}
         onClose={() => setIsConfirmModalOpen(false)}
-        title="Xác nhận duyệt điểm danh"
+        title={
+          isCoach
+            ? 'Xác nhận điểm danh học viên'
+            : isFacilityManager
+            ? 'Xác nhận duyệt & chốt ca học'
+            : targetSession?.coachAttendanceDone || targetSession?.attendanceDone
+            ? 'Lưu điều chỉnh / sửa sai sót (Admin)'
+            : 'Xác nhận duyệt điểm danh (Admin)'
+        }
         subtitle={`Ngày ${selectedDate} • ${selectedShiftName} • ${formatCleanFacilityName(currentFacilityName)}`}
         maxWidth="md"
       >
         <div className="space-y-4">
           <p className="text-sm text-slate-600 leading-relaxed">
-            Bạn có chắc chắn muốn duyệt và chốt kết quả điểm danh cho ca tập này không?
+            {isCoach
+              ? 'Bạn có chắc chắn muốn gửi kết quả điểm danh học viên của ca học này lên Quản lý cơ sở không? (Sau khi gửi, bạn sẽ không thể chỉnh sửa).'
+              : isFacilityManager
+              ? 'Bạn có chắc chắn muốn duyệt danh sách học viên và chốt chấm công cho Huấn luyện viên ca này không? (Sau khi chốt, chỉ Admin mới có quyền sửa đổi nếu có sai sót).'
+              : 'Bạn đang lưu điều chỉnh điểm danh học viên và chấm công HLV cho ca học này. Hệ thống sẽ tự động cập nhật lại số buổi học viên và giờ dạy của HLV một cách chính xác.'}
           </p>
 
           <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-2 text-xs">
@@ -1968,7 +2097,7 @@ export const AttendanceView: React.FC = () => {
             )}
             {canManageCoachAttendance && facilityCoachItems.length > 0 && (
               <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60">
-                <span className="text-slate-500 font-semibold">Huấn luyện viên:</span>
+                <span className="text-slate-500 font-semibold">Huấn luyện viên phụ trách:</span>
                 <span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md">
                   {facilityCoachItems.length} HLV
                 </span>
@@ -1987,10 +2116,22 @@ export const AttendanceView: React.FC = () => {
             <button
               type="button"
               onClick={handleConfirmApprove}
-              className="px-5 py-2 text-xs sm:text-sm font-bold text-white bg-[#10B981] hover:bg-emerald-600 rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+              className={`px-5 py-2 text-xs sm:text-sm font-bold text-white rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
+                isCoach
+                  ? 'bg-[#10B981] hover:bg-emerald-600'
+                  : isFacilityManager
+                  ? 'bg-indigo-600 hover:bg-indigo-700'
+                  : 'bg-purple-600 hover:bg-purple-700'
+              }`}
             >
               <CheckCheck className="w-4 h-4" />
-              <span>Xác nhận duyệt</span>
+              <span>
+                {isCoach
+                  ? 'Gửi điểm danh học viên'
+                  : isFacilityManager
+                  ? 'Duyệt & Chốt ca học'
+                  : 'Lưu điều chỉnh (Admin)'}
+              </span>
             </button>
           </div>
         </div>
