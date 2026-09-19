@@ -746,10 +746,14 @@ export const ChatView: React.FC = () => {
                                       toggleChatReaction(msg.id, qr.emoji, qr.label);
                                       setActiveReactionPickerMsgId(null);
                                     }}
-                                    title={`${qr.label} (${qr.emoji})`}
+                                    title={
+                                      hasReactedThis
+                                        ? `${qr.label} (${qr.emoji}) - Đã thả biểu cảm (Không thể hủy)`
+                                        : `${qr.label} (${qr.emoji})`
+                                    }
                                     className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm transition-transform hover:scale-125 active:scale-95 cursor-pointer ${
                                       hasReactedThis
-                                        ? 'bg-emerald-100 ring-1 ring-emerald-400'
+                                        ? 'bg-emerald-100 ring-1 ring-emerald-400 opacity-90'
                                         : 'hover:bg-slate-100'
                                     }`}
                                   >
@@ -764,12 +768,17 @@ export const ChatView: React.FC = () => {
                         {/* Nút React Nhanh Xác Nhận ✅ */}
                         <button
                           type="button"
-                          onClick={() => toggleChatReaction(msg.id, '✅', 'Đã xác nhận')}
-                          title={hasIConfirmed ? 'Bỏ xác nhận (Đã react ✅)' : 'Xác nhận nhanh (React ✅)'}
-                          className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-xs border ${
+                          disabled={hasIConfirmed}
+                          onClick={() => {
+                            if (!hasIConfirmed) {
+                              toggleChatReaction(msg.id, '✅', 'Đã xác nhận');
+                            }
+                          }}
+                          title={hasIConfirmed ? 'Đã xác nhận ✅ (Không thể hủy)' : 'Xác nhận nhanh (React ✅)'}
+                          className={`w-7 h-7 rounded-full flex items-center justify-center transition-all shadow-xs border ${
                             hasIConfirmed
-                              ? 'bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600'
-                              : 'bg-white hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 border-slate-200 hover:border-emerald-300'
+                              ? 'bg-emerald-500 text-white border-emerald-500 cursor-default opacity-95'
+                              : 'bg-white hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 border-slate-200 hover:border-emerald-300 cursor-pointer'
                           }`}
                         >
                           {hasIConfirmed ? (
@@ -1018,27 +1027,16 @@ export const ChatView: React.FC = () => {
                               </div>
                             </div>
 
-                            {/* Nút gỡ nếu là mình hoặc biểu tượng react */}
-                            {isMe ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  toggleChatReaction(selectedMessageForDetails.id, r.emoji, r.label || 'Đã react');
-                                  setSelectedMessageForDetails(prev => {
-                                    if (!prev) return null;
-                                    const updated = (prev.reactions || []).filter(
-                                      rx => !(rx.userId === currentUser.id && rx.emoji === r.emoji)
-                                    );
-                                    return { ...prev, reactions: updated };
-                                  });
-                                }}
-                                className="px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-rose-200"
-                              >
-                                Nhấp để gỡ
-                              </button>
-                            ) : (
-                              <span className="text-sm select-none">{r.emoji}</span>
-                            )}
+                            {/* Biểu tượng biểu cảm & Trạng thái đã ghi nhận */}
+                            <div className="flex items-center gap-2">
+                              <span className="text-base select-none">{r.emoji}</span>
+                              {isMe && (
+                                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md flex items-center gap-1 select-none border border-slate-200">
+                                  <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                  Đã ghi nhận
+                                </span>
+                              )}
+                            </div>
                           </div>
                         );
                       })

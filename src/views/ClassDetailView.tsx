@@ -14,7 +14,8 @@ import {
   Check,
   UserPlus,
   Trash2,
-  X
+  X,
+  Bell
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Modal } from '../components/common/Modal';
@@ -42,10 +43,13 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
     setAttendanceTarget,
     getClassById,
     currentUser,
+    isFacilityManager,
     managedFacilityId,
     updateDailyClassNote,
     dailyCoachAssignments,
     dailyStudentAssignments,
+    dailyClassNotes,
+    notifications,
     classCoachStudentAssignments,
     assignStudentToCoachInClass,
     batchAssignStudentsToCoachInClass,
@@ -91,10 +95,27 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
     return classDate === systemToday || classDate === realToday;
   }, [classDate]);
 
+  // Note from Management / Admin for this class
+  const classNote = useMemo(() => {
+    return (
+      currentClass.preSessionNote ||
+      currentClass.note ||
+      dailyClassNotes[currentClass.id] ||
+      notifications.find(n => n.targetRole === 'COACH' && (n.linkTo?.id === currentClass.id || (n.sessionDate === classDate && n.shiftName === currentClass.shiftName)))?.noteContent ||
+      notifications.find(n => n.targetRole === 'COACH' && (n.linkTo?.id === currentClass.id || (n.sessionDate === classDate && n.shiftName === currentClass.shiftName)))?.message ||
+      ''
+    );
+  }, [currentClass.preSessionNote, currentClass.note, currentClass.id, currentClass.shiftName, classDate, dailyClassNotes, notifications]);
+
+  const noteSender = useMemo(() => {
+    const notif = notifications.find(n => n.targetRole === 'COACH' && (n.linkTo?.id === currentClass.id || (n.sessionDate === classDate && n.shiftName === currentClass.shiftName)));
+    return notif?.senderName || 'Ban Quản Trị / Quản Lý Cơ Sở';
+  }, [notifications, currentClass.id, currentClass.shiftName, classDate]);
+
   // Load saved note on class change
   useEffect(() => {
-    setDetailNoteInput(currentClass.preSessionNote || currentClass.note || '');
-  }, [currentClass.id, currentClass.preSessionNote, currentClass.note]);
+    setDetailNoteInput(classNote);
+  }, [classNote]);
 
   const handleSaveNote = () => {
     updateDailyClassNote(currentClass.id, detailNoteInput);
@@ -782,82 +803,90 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
             </h1>
           </div>
 
-          {/* Pre-session Reminder Note for Coach - Chỉ hiển thị với những lớp chưa diễn ra */}
-          {isClassUpcoming && (
-            <>
-              {currentClass.preSessionNote && !isEditingNote && (
-                <div className="p-3.5 bg-amber-50/90 border border-amber-200/90 rounded-2xl flex items-start justify-between gap-3 text-xs text-amber-950 max-w-3xl shadow-2xs">
-                  <div className="flex items-start gap-2.5">
-                    <MessageSquare className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-extrabold text-amber-900">Nhắc nhở riêng cho HLV: </span>
-                      <span className="font-medium text-amber-950">{currentClass.preSessionNote}</span>
-                    </div>
+          {/* Pre-session Reminder Note for Coach / Admin */}
+          {Boolean(classNote && !isEditingNote) && (
+            <div className="p-4 bg-gradient-to-r from-amber-50/90 via-orange-50/50 to-amber-50/80 border border-amber-200/90 rounded-2xl flex flex-col gap-2.5 max-w-3xl shadow-2xs animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <Bell className="w-4 h-4" />
                   </div>
-                  {canManageNote && (
-                    <button
-                      onClick={() => {
-                        setDetailNoteInput(currentClass.preSessionNote || '');
-                        setIsEditingNote(true);
-                      }}
-                      className="text-amber-800 hover:text-amber-950 font-bold text-xs underline shrink-0 cursor-pointer"
-                    >
-                      Chỉnh sửa
-                    </button>
-                  )}
+                  <div>
+                    <span className="font-extrabold text-xs text-amber-950 uppercase tracking-wider">
+                      Dặn Dò Ca Dạy Từ Ban Quản Lý
+                    </span>
+                    <span className="text-[11px] text-slate-500 ml-2">
+                      ({noteSender})
+                    </span>
+                  </div>
                 </div>
-              )}
-
-              {!currentClass.preSessionNote && !isEditingNote && canManageNote && (
-                <div>
+                {canManageNote && (
                   <button
                     onClick={() => {
-                      setDetailNoteInput('');
+                      setDetailNoteInput(classNote);
                       setIsEditingNote(true);
                     }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    className="text-amber-800 hover:text-amber-950 font-bold text-xs underline shrink-0 cursor-pointer"
                   >
-                    <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
-                    <span>+ Nhắc nhở riêng cho HLV</span>
+                    Chỉnh sửa
                   </button>
-                </div>
-              )}
+                )}
+              </div>
 
-              {isEditingNote && (
-                <div className="p-3.5 bg-amber-50/90 border border-amber-300 rounded-2xl space-y-2.5 max-w-2xl">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
-                    <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Nhắc nhở dặn dò HLV trước ca dạy:</span>
-                  </div>
-                  <textarea
-                    rows={2}
-                    value={detailNoteInput}
-                    onChange={e => setDetailNoteInput(e.target.value)}
-                    placeholder="Nhập dặn dò riêng cho HLV (bài tập, tình trạng sân, học viên...)"
-                    className="w-full p-2.5 bg-white text-xs text-slate-800 rounded-xl border border-amber-200 outline-none focus:border-amber-500"
-                  />
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingNote(false)}
-                      className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer"
-                    >
-                      Hủy
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateDailyClassNote(currentClass.id, detailNoteInput);
-                        setIsEditingNote(false);
-                      }}
-                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
-                    >
-                      Lưu nhắc nhở HLV
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
+              <div className="p-3 bg-white/95 rounded-xl border-l-3 border-amber-500 text-xs sm:text-sm text-slate-800 font-medium leading-relaxed shadow-2xs">
+                "{classNote}"
+              </div>
+            </div>
+          )}
+
+          {!classNote && !isEditingNote && canManageNote && (
+            <div>
+              <button
+                onClick={() => {
+                  setDetailNoteInput('');
+                  setIsEditingNote(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
+                <span>+ Thêm lời dặn dò cho HLV</span>
+              </button>
+            </div>
+          )}
+
+          {isEditingNote && (
+            <div className="p-4 bg-amber-50/90 border border-amber-300 rounded-2xl space-y-3 max-w-2xl shadow-xs">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
+                <span>Nhắc nhở dặn dò HLV trước ca dạy:</span>
+              </div>
+              <textarea
+                rows={3}
+                value={detailNoteInput}
+                onChange={e => setDetailNoteInput(e.target.value)}
+                placeholder="Nhập dặn dò riêng cho HLV (bài tập, tình trạng sân, học viên...)"
+                className="w-full p-3 bg-white text-xs sm:text-sm text-slate-800 rounded-xl border border-amber-200 outline-none focus:border-amber-500 resize-none shadow-2xs"
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingNote(false)}
+                  className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateDailyClassNote(currentClass.id, detailNoteInput);
+                    setIsEditingNote(false);
+                  }}
+                  className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  Lưu nhắc nhở HLV
+                </button>
+              </div>
+            </div>
           )}
         </div>
 

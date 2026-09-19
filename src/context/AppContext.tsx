@@ -4269,30 +4269,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map(msg => {
         if (msg.id !== messageId) return msg;
 
-        const existingIdx = msg.reactions.findIndex(
+        const alreadyReacted = msg.reactions.some(
           r => r.userId === currentUser.id && r.emoji === emoji
         );
 
-        let newReactions = [...msg.reactions];
-        if (existingIdx >= 0) {
-          newReactions.splice(existingIdx, 1);
-        } else {
-          const now = new Date();
-          const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-          newReactions.push({
-            emoji,
-            label,
-            userId: currentUser.id,
-            userName: currentUser.name,
-            userRole: currentUser.role,
-            userAvatar: currentUser.avatar,
-            timestamp: timeStr
-          });
+        // Đã react rồi thì KHÔNG THỂ HỦY BỎ
+        if (alreadyReacted) {
+          showToast(`Bạn đã thả biểu cảm ${emoji} cho tin nhắn này (Không thể hủy).`, 'info');
+          return msg;
         }
+
+        const now = new Date();
+        const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const newReaction = {
+          emoji,
+          label,
+          userId: currentUser.id,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          userAvatar: currentUser.avatar,
+          timestamp: timeStr
+        };
+
+        showToast(`Đã thả biểu cảm ${emoji} (${label})!`, 'success');
 
         return {
           ...msg,
-          reactions: newReactions
+          reactions: [...msg.reactions, newReaction]
         };
       })
     );

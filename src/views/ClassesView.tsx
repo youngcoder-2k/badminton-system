@@ -20,7 +20,9 @@ import {
   Check,
   PartyPopper,
   UserPlus,
-  CalendarOff
+  CalendarOff,
+  Bell,
+  ArrowRight
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Modal } from '../components/common/Modal';
@@ -44,6 +46,8 @@ export const ClassesView: React.FC = () => {
     checkCoachShiftConflict,
     isCoachRegisteredForDate,
     updateDailyClassNote,
+    dailyClassNotes,
+    notifications,
     holidays,
     declareHoliday,
     removeHoliday,
@@ -216,6 +220,11 @@ export const ClassesView: React.FC = () => {
     } catch {
       return dateStr;
     }
+  };
+
+  const formatCleanFacilityName = (name?: string): string => {
+    if (!name) return 'Cơ sở';
+    return name.replace(/^Sân\s+(Cầu\s+Lông\s+)?/i, '').trim();
   };
 
   // Facilities to display on Level 1
@@ -403,6 +412,60 @@ export const ClassesView: React.FC = () => {
     if (!currentModalClass) return [];
     return availableCoachesToAdd.filter(c => !checkCoachShiftConflict(c.id, currentModalClass.id));
   }, [availableCoachesToAdd, currentModalClass, checkCoachShiftConflict]);
+
+  // Reminders / Notes from Management for Coach on selectedDate
+  const coachReminders = useMemo(() => {
+    if (!isCoach) return [];
+    const coachId = currentUser.coachId || currentUser.id;
+
+    // 1. Get from notifications matching COACH role and target date
+    const notifItems = notifications.filter(n => {
+      if (n.targetRole !== 'COACH') return false;
+      if (n.targetCoachId && n.targetCoachId !== coachId) return false;
+      let dateStr = n.sessionDate;
+      if (!dateStr && n.linkTo?.id && n.linkTo.id.startsWith('CLS_')) {
+        const parts = n.linkTo.id.split('_');
+        dateStr = parts.slice(3).join('_');
+      }
+      if (!dateStr) dateStr = '2026-08-28';
+      return dateStr === selectedDate;
+    });
+
+    // 2. Also check dailyClasses if any class has preSessionNote or dailyClassNotes
+    const classNotesReminders = dailyClasses
+      .filter(cls => {
+        const note = cls.preSessionNote || dailyClassNotes[cls.id];
+        return Boolean(note && note.trim());
+      })
+      .map(cls => {
+        const note = (cls.preSessionNote || dailyClassNotes[cls.id])!;
+        const existing = notifItems.find(n => n.linkTo?.id === cls.id);
+        if (existing) return existing;
+        return {
+          id: `note-${cls.id}`,
+          title: `Dặn dò ca ${cls.shiftName || 'học'}`,
+          message: note,
+          noteContent: note,
+          time: 'Hôm nay',
+          read: false,
+          type: 'info' as const,
+          facilityName: cls.facilityName,
+          shiftName: cls.shiftName,
+          senderName: 'Ban Quản Trị / Quản Lý Cơ Sở',
+          linkTo: { tab: 'classes', id: cls.id }
+        };
+      });
+
+    // Merge unique
+    const combined = [...notifItems];
+    classNotesReminders.forEach(item => {
+      if (!combined.some(c => c.id === item.id || (c.linkTo?.id && c.linkTo.id === item.linkTo?.id))) {
+        combined.push(item);
+      }
+    });
+
+    return combined;
+  }, [isCoach, notifications, currentUser.coachId, currentUser.id, selectedDate, dailyClasses, dailyClassNotes]);
 
   const handleToggleCoachSelect = (coachId: string) => {
     if (currentModalClass && checkCoachShiftConflict(coachId, currentModalClass.id)) {
@@ -926,6 +989,89 @@ export const ClassesView: React.FC = () => {
         </div>
       </div>
 
+      {/* Coach Pre-Session Reminder Banner for ClassesView */}
+      {isCoach && coachReminders.length > 0 && (
+        <div className="p-4 sm:p-5 bg-gradient-to-br from-amber-50/90 via-orange-50/40 to-amber-50/70 border border-amber-200/90 rounded-3xl space-y-3.5 shadow-xs animate-in fade-in">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-amber-200/60">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs shrink-0">
+                <Bell className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-sm sm:text-base text-slate-900">
+                  Dặn Dò Ca Dạy Từ Ban Quản Lý
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Lưu ý và dặn dò chuyên môn cho các ca dạy của bạn
+                </p>
+              </div>
+            </div>
+
+            {coachReminders.filter(n => !n.read).length > 0 && (
+              <span className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500 text-white text-xs font-bold shadow-xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                <span>{coachReminders.filter(n => !n.read).length} lời nhắc mới</span>
+              </span>
+            )}
+          </div>
+
+          {/* Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {coachReminders.slice(0, 4).map(item => {
+              const cleanFac = formatCleanFacilityName(item.facilityName || 'Triều Khúc');
+              const shiftLabel = item.shiftName || 'Ca học';
+
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => {
+                    if (item.linkTo?.id) {
+                      navigate('classes', item.linkTo.id, 'classes');
+                    }
+                  }}
+                  className="bg-white rounded-2xl border border-amber-200/80 hover:border-amber-400 p-3.5 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between gap-2.5 group"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-800 text-xs font-bold border border-slate-200/70">
+                        <MapPin className="w-3 h-3 text-amber-600 shrink-0" />
+                        <span className="truncate">{cleanFac}</span>
+                      </span>
+
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-50 text-amber-900 text-xs font-bold border border-amber-200/80">
+                        <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                        <span>{shiftLabel}</span>
+                      </span>
+                    </div>
+
+                    <span className="text-[11px] text-slate-400 shrink-0 font-medium">
+                      {item.time || 'Vừa xong'}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-amber-50/50 rounded-xl border-l-3 border-amber-500 text-xs sm:text-sm text-slate-800 font-medium leading-relaxed">
+                    "{item.noteContent || item.message}"
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs">
+                    <span className="text-slate-500 text-[11px] font-medium flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                      <span>{item.senderName || 'Ban Quản Trị'}</span>
+                    </span>
+
+                    <span className="text-emerald-600 group-hover:text-emerald-700 font-bold text-xs inline-flex items-center gap-1 transition-colors">
+                      <span>Xem ca học</span>
+                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Toolbar: Filters & Search within this facility */}
       <div className="p-4 bg-white rounded-2xl border border-slate-100 shadow-xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
         {/* Search Input */}
@@ -1116,13 +1262,13 @@ export const ClassesView: React.FC = () => {
                             )}
                           </div>
 
-                          {/* Nhắc nhở gửi riêng cho HLV - Chỉ hiển thị với lớp chưa diễn ra */}
-                          {cls.preSessionNote && isClassUpcoming(cls) && (
+                          {/* Nhắc nhở gửi riêng cho HLV */}
+                          {(cls.preSessionNote || dailyClassNotes[cls.id]) && (
                             <div className="flex items-start gap-2 p-2 bg-amber-50/90 text-amber-950 border border-amber-200/80 rounded-xl text-xs max-w-xl shadow-2xs">
                               <MessageSquare className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
                               <div className="leading-relaxed">
                                 <span className="font-bold text-amber-900">Nhắc nhở HLV: </span>
-                                <span className="text-slate-800">{cls.preSessionNote}</span>
+                                <span className="text-slate-800">{cls.preSessionNote || dailyClassNotes[cls.id]}</span>
                               </div>
                             </div>
                           )}
@@ -1276,13 +1422,13 @@ export const ClassesView: React.FC = () => {
                       }
                     </div>
 
-                    {/* Pre-session Reminder Note for Coach - Chỉ hiển thị với lớp chưa diễn ra */}
-                    {cls.preSessionNote && isClassUpcoming(cls) && (
-                      <div className="p-2 bg-amber-50/90 text-amber-950 border border-amber-200/80 rounded-xl text-xs flex items-start gap-1.5">
+                    {/* Pre-session Reminder Note for Coach */}
+                    {(cls.preSessionNote || dailyClassNotes[cls.id]) && (
+                      <div className="p-2.5 bg-amber-50/90 text-amber-950 border border-amber-200/90 rounded-xl text-xs flex items-start gap-2 shadow-2xs">
                         <MessageSquare className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
                         <div>
-                          <span className="font-bold text-amber-900">Nhắc nhở HLV: </span>
-                          <span className="text-slate-800">{cls.preSessionNote}</span>
+                          <span className="font-extrabold text-amber-900">Dặn dò của Quản lý: </span>
+                          <span className="text-slate-800 font-medium">{cls.preSessionNote || dailyClassNotes[cls.id]}</span>
                         </div>
                       </div>
                     )}
