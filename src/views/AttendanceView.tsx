@@ -960,11 +960,11 @@ export const AttendanceView: React.FC = () => {
 
         {/* Action Buttons (Session Mode) */}
         {viewTab === 'session' && (
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 flex-nowrap w-full sm:w-auto overflow-x-auto no-scrollbar">
             {!isCoach && !isTodayHoliday && (!isAttendedLocked || isAdmin) && (
               <button
                 onClick={() => setIsMakeupModalOpen(true)}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer whitespace-nowrap"
+                className="inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer whitespace-nowrap"
               >
                 <UserPlus className="w-4 h-4 shrink-0" />
                 <span>THÊM HỌC BÙ</span>
@@ -972,13 +972,13 @@ export const AttendanceView: React.FC = () => {
             )}
 
             {isTodayHoliday ? (
-              <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-amber-100 text-amber-900 font-bold text-xs sm:text-sm rounded-xl border border-amber-300 shadow-xs">
+              <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-amber-100 text-amber-900 font-bold text-xs sm:text-sm rounded-xl border border-amber-300 shadow-xs whitespace-nowrap">
                 <PartyPopper className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>NGÀY NGHỈ LỄ (TẠM NGƯNG ĐIỂM DANH)</span>
               </div>
             ) : isSelectedDateFuture ? (
               <div
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-500 font-bold text-xs sm:text-sm rounded-xl border border-slate-200 shadow-2xs select-none"
+                className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-100 text-slate-500 font-bold text-xs sm:text-sm rounded-xl border border-slate-200 shadow-2xs select-none whitespace-nowrap"
                 title="Chưa đến ngày ca học. Chỉ có thể điểm danh trong ngày hôm nay (được phép thêm học bù)!"
               >
                 <Clock className="w-4 h-4 text-slate-400 shrink-0" />
@@ -987,7 +987,7 @@ export const AttendanceView: React.FC = () => {
             ) : isCoach ? (
               isStudentAttendanceDone ? (
                 <div
-                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-50 text-emerald-800 font-bold text-xs sm:text-sm rounded-xl border border-emerald-200 shadow-2xs select-none"
+                  className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-emerald-50 text-emerald-800 font-bold text-xs sm:text-sm rounded-xl border border-emerald-200 shadow-2xs select-none whitespace-nowrap"
                   title="Bạn đã gửi điểm danh học viên cho ca này. Vui lòng chờ Quản lý cơ sở kiểm tra và chấm công!"
                 >
                   <CheckCheck className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -996,7 +996,7 @@ export const AttendanceView: React.FC = () => {
               ) : (
                 <button
                   onClick={() => setIsConfirmModalOpen(true)}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#10B981] hover:bg-emerald-600 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer whitespace-nowrap"
+                  className="inline-flex items-center justify-center gap-1.5 sm:gap-2 px-4 sm:px-5 py-2 sm:py-2.5 bg-[#10B981] hover:bg-emerald-600 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer whitespace-nowrap"
                 >
                   <CheckCheck className="w-4 h-4 shrink-0" />
                   <span>XÁC NHẬN ĐIỂM DANH HỌC VIÊN</span>
@@ -1005,19 +1005,19 @@ export const AttendanceView: React.FC = () => {
             ) : isFacilityManager ? (
               isFacilityManagerLocked ? (
                 <div
-                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-600 font-bold text-xs sm:text-sm rounded-xl border border-slate-200 shadow-2xs select-none cursor-not-allowed"
+                  className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-100 text-slate-600 font-bold text-xs sm:text-sm rounded-xl border border-slate-200 shadow-2xs select-none cursor-not-allowed whitespace-nowrap"
                   title="Ca học này đã được Quản lý cơ sở duyệt và chốt. Chỉ Admin mới có quyền sửa đổi nếu có sai sót!"
                 >
                   <Lock className="w-4 h-4 text-slate-400 shrink-0" />
-                  <span>ĐÃ DUYỆT & CHỐT (CHỈ ADMIN MỚI ĐƯỢC SỬA)</span>
+                  <span>ĐÃ DUYỆT & CHỐT</span>
                 </div>
               ) : (
                 <button
                   onClick={() => setIsConfirmModalOpen(true)}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer whitespace-nowrap"
+                  className="inline-flex items-center justify-center gap-1.5 sm:gap-2 px-4 sm:px-5 py-2 sm:py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs hover:shadow-md transition-all cursor-pointer whitespace-nowrap"
                 >
                   <Shield className="w-4 h-4 shrink-0" />
-                  <span>DUYỆT & CHỐT CA HỌC (CHẤM CÔNG HLV)</span>
+                  <span>DUYỆT & CHỐT CA HỌC</span>
                 </button>
               )
             ) : (
@@ -2064,14 +2064,6 @@ export const AttendanceView: React.FC = () => {
         maxWidth="md"
       >
         <div className="space-y-4">
-          <p className="text-sm text-slate-600 leading-relaxed">
-            {isCoach
-              ? 'Bạn có chắc chắn muốn gửi kết quả điểm danh học viên của ca học này lên Quản lý cơ sở không? (Sau khi gửi, bạn sẽ không thể chỉnh sửa).'
-              : isFacilityManager
-              ? 'Bạn có chắc chắn muốn duyệt danh sách học viên và chốt chấm công cho Huấn luyện viên ca này không? (Sau khi chốt, chỉ Admin mới có quyền sửa đổi nếu có sai sót).'
-              : 'Bạn đang lưu điều chỉnh điểm danh học viên và chấm công HLV cho ca học này. Hệ thống sẽ tự động cập nhật lại số buổi học viên và giờ dạy của HLV một cách chính xác.'}
-          </p>
-
           <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-2 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-slate-500 font-semibold">Học viên có mặt:</span>
