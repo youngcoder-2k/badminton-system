@@ -202,8 +202,9 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
       if (sid) studentIdSet.add(sid);
     });
 
+    let studentList: Student[] = [];
     if (studentIdSet.size > 0) {
-      return Array.from(studentIdSet)
+      studentList = Array.from(studentIdSet)
         .map(id => {
           const found = students.find(s => s.id === id);
           if (found) return found;
@@ -228,9 +229,31 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({ classId, onBac
           return undefined;
         })
         .filter((s): s is Student => Boolean(s));
+    } else {
+      studentList = students.filter(s => s.classId === currentClass.id);
     }
-    return students.filter(s => s.classId === currentClass.id);
-  }, [currentClass, students, dailyStudentAssignments, classMakeupRecords]);
+
+    // Tự động loại bỏ học viên nếu đã chuyển sang học bù tại cơ sở khác hoặc ca khác vào ngày classDate
+    return studentList.filter(st => {
+      // Nếu học viên này đang học bù tại chính lớp này thì giữ nguyên
+      const isMakeupInThisClass = classMakeupRecords.some(m => (m.studentId || (m as any).id) === st.id);
+      if (isMakeupInThisClass) return true;
+
+      // Kiểm tra xem học viên có đang học bù ở ca khác / cơ sở khác vào ngày này không
+      const isAttendingMakeupElsewhere = sessions.some(
+        s =>
+          s.date === classDate &&
+          s.id !== sessionForClass?.id &&
+          (s.classId !== currentClass.id || s.facilityId !== currentClass.facilityId) &&
+          (
+            s.makeupStudents?.some(m => (m.studentId || (m as any).id) === st.id) ||
+            s.attendanceRecords?.some(r => r.isMakeup && ((r.studentId || (r as any).id) === st.id))
+          )
+      );
+
+      return !isAttendingMakeupElsewhere;
+    });
+  }, [currentClass, students, dailyStudentAssignments, classMakeupRecords, sessions, classDate, sessionForClass]);
 
   // Group Assignment State (Each group/card can have multiple coaches and multiple students)
   const storageKey = `badminton_assignment_groups_v5_${currentClass.id}`;

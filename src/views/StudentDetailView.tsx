@@ -818,29 +818,36 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
                 {currentStudent.attendanceHistory.map(att => (
                   <div key={att.id} className="p-3.5 space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-[#0F172A]">{att.date}</span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-black text-[#0F172A]">{att.date}</span>
+                        {att.isMakeup && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200">
+                            Học bù
+                          </span>
+                        )}
+                      </div>
                       <AttendanceStatusBadge status={att.status} />
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div>
                         <span className="text-slate-400 text-[10px] block uppercase font-bold">Lớp học</span>
-                        <span className="font-semibold text-slate-800 truncate block">{currentStudent.className}</span>
+                        <span className="font-semibold text-slate-800 truncate block">{att.className || currentStudent.className}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] block uppercase font-bold">Cơ sở tập</span>
+                        <span className="font-semibold text-slate-800 truncate block">{att.facilityName || currentStudent.facilityName || '—'}</span>
                       </div>
                       <div>
                         <span className="text-slate-400 text-[10px] block uppercase font-bold">Khung giờ</span>
-                        <span className="font-medium text-slate-700 block">18:00 - 19:30</span>
+                        <span className="font-medium text-slate-700 block">{att.timeSlot || '18:00 - 19:30'}</span>
                       </div>
                       <div>
-                        <span className="text-slate-400 text-[10px] block uppercase font-bold">Sân tập</span>
-                        <span className="font-medium text-slate-700 block">Sân 02</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 text-[10px] block uppercase font-bold">HLV phụ trách</span>
-                        <span className="font-medium text-slate-700 block">{currentStudent.coachName}</span>
+                        <span className="text-slate-400 text-[10px] block uppercase font-bold">Sân & HLV</span>
+                        <span className="font-medium text-slate-700 block">{att.courtName || 'Sân 01'} • {att.coachName || currentStudent.coachName}</span>
                       </div>
                     </div>
                     {att.note && (
-                      <div className="text-[11px] text-slate-500 bg-slate-50 p-2 rounded-xl border border-slate-100">
+                      <div className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded-xl border border-slate-100 font-medium">
                         {att.note}
                       </div>
                     )}
@@ -855,23 +862,36 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({ studentId,
                     <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                       <th className="py-3.5 px-5">Ngày học</th>
                       <th className="py-3.5 px-4">Lớp</th>
+                      <th className="py-3.5 px-4">Cơ sở</th>
                       <th className="py-3.5 px-4">Khung giờ</th>
                       <th className="py-3.5 px-4">Sân tập</th>
                       <th className="py-3.5 px-4">HLV phụ trách</th>
                       <th className="py-3.5 px-4">Trạng thái điểm danh</th>
-                      <th className="py-3.5 px-5">Ghi chú</th>
+                      <th className="py-3.5 px-5">Ghi chú đối soát</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {currentStudent.attendanceHistory.map(att => (
                       <tr key={att.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="py-3.5 px-5 font-bold text-[#0F172A] text-xs">{att.date}</td>
-                        <td className="py-3.5 px-4 font-semibold text-slate-800 text-xs">
-                          {currentStudent.className}
+                        <td className="py-3.5 px-5 font-bold text-[#0F172A] text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <span>{att.date}</span>
+                            {att.isMakeup && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200 shrink-0">
+                                Học bù
+                              </span>
+                            )}
+                          </div>
                         </td>
-                        <td className="py-3.5 px-4 text-xs text-slate-600">18:00 - 19:30</td>
-                        <td className="py-3.5 px-4 text-xs text-slate-600">Sân 02</td>
-                        <td className="py-3.5 px-4 text-xs text-slate-600">{currentStudent.coachName}</td>
+                        <td className="py-3.5 px-4 font-semibold text-slate-800 text-xs">
+                          {att.className || currentStudent.className}
+                        </td>
+                        <td className="py-3.5 px-4 text-xs font-semibold text-slate-700">
+                          {att.facilityName || currentStudent.facilityName || '—'}
+                        </td>
+                        <td className="py-3.5 px-4 text-xs text-slate-600">{att.timeSlot || '18:00 - 19:30'}</td>
+                        <td className="py-3.5 px-4 text-xs text-slate-600">{att.courtName || 'Sân 01'}</td>
+                        <td className="py-3.5 px-4 text-xs text-slate-600">{att.coachName || currentStudent.coachName}</td>
                         <td className="py-3.5 px-4">
                           <AttendanceStatusBadge status={att.status} />
                         </td>

@@ -91,22 +91,61 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
     return counts;
   }, [daysInMonth, filteredStudents]);
 
-  // Lookup attendance status for a student on a specific date
-  const getAttendanceForStudentDate = (studentId: string, dateStr: string): AttendanceStatus | 'Scheduled' | 'None' => {
-    // 1. Check existing sessions
-    const matchedSession = sessions.find(s => s.date === dateStr);
-    if (matchedSession?.attendanceRecords) {
-      const record = matchedSession.attendanceRecords.find(r => r.studentId === studentId);
-      if (record) return record.status;
-    }
+  interface AttendanceCellInfo {
+    status: AttendanceStatus | 'Scheduled' | 'None';
+    isMakeup?: boolean;
+    facilityName?: string;
+    shiftName?: string;
+    note?: string;
+  }
 
-    // 2. If student has this specific date registered
+  // Lookup attendance status for a student on a specific date (hỗ trợ đồng bộ data tổng & đối soát đa cơ sở)
+  const getAttendanceInfoForStudentDate = (studentId: string, dateStr: string): AttendanceCellInfo => {
     const student = students.find(s => s.id === studentId);
-    if (student?.specificDates?.includes(dateStr)) {
-      return 'Scheduled';
+
+    // 1. Kiểm tra lịch sử điểm danh đã đồng bộ trong Student (chính xác nhất)
+    const historyItem = student?.attendanceHistory?.find(h => h.date === dateStr);
+    if (historyItem) {
+      return {
+        status: historyItem.status,
+        isMakeup: Boolean(historyItem.isMakeup),
+        facilityName: historyItem.facilityName,
+        shiftName: historyItem.shiftName,
+        note: historyItem.note
+      };
     }
 
-    return 'None';
+    // 2. Kiểm tra tất cả các ca học trong ngày dateStr trên toàn hệ thống (bao gồm ca học bù ở cơ sở khác)
+    const matchedSessions = sessions.filter(s => s.date === dateStr);
+    for (const sess of matchedSessions) {
+      const record = sess.attendanceRecords?.find(r => r.studentId === studentId);
+      if (record) {
+        return {
+          status: record.status,
+          isMakeup: Boolean(record.isMakeup || sess.makeupStudents?.some(m => (m.studentId || (m as any).id) === studentId)),
+          facilityName: sess.facilityName,
+          shiftName: sess.shiftName,
+          note: record.note
+        };
+      }
+      const makeup = sess.makeupStudents?.find(m => (m.studentId || (m as any).id) === studentId);
+      if (makeup) {
+        return {
+          status: (makeup.status as AttendanceStatus) || 'Present',
+          isMakeup: true,
+          facilityName: sess.facilityName,
+          shiftName: sess.shiftName,
+          note: makeup.note
+        };
+      }
+    }
+
+    // 3. Nếu học viên có lịch học ngày này
+    if (student?.specificDates?.includes(dateStr)) {
+      return { status: 'Scheduled' };
+    }
+
+    return { status: 'None' };
   };
 
   // Export Matrix to CSV
@@ -123,11 +162,17 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
 
     const rows = filteredStudents.map((st, idx) => {
       const dayValues = daysInMonth.map(d => {
-        const status = getAttendanceForStudentDate(st.id, d.dateStr);
-        if (status === 'Present') return 'V';
-        if (status === 'Excused') return 'P';
-        if (status === 'Absent') return 'K';
-        if (status === 'Scheduled') return '●';
+        const info = getAttendanceInfoForStudentDate(st.id, d.dateStr);
+        if (info.status === 'Present') {
+          return info.isMakeup ? `"V (Bù: ${info.facilityName || 'Khác'})"` : 'V';
+        }
+        if (info.status === 'Excused') {
+          return info.isMakeup ? `"P (Bù: ${info.facilityName || 'Khác'})"` : 'P';
+        }
+        if (info.status === 'Absent') {
+          return info.isMakeup ? `"K (Bù: ${info.facilityName || 'Khác'})"` : 'K';
+        }
+        if (info.status === 'Scheduled') return '●';
         return '';
       });
 
@@ -387,8 +432,10 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
 
                       {/* 31 Date Cells */}
                       {daysInMonth.map(d => {
-                        const status = getAttendanceForStudentDate(st.id, d.dateStr);
+                        const info = getAttendanceInfoForStudentDate(st.id, d.dateStr);
+                        const status = info.status;
                         const isScheduled = st.specificDates?.includes(d.dateStr);
+                        const isMakeup = info.isMakeup;
 
                         return (
                           <td
@@ -397,7 +444,7 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
                               d.isToday ? 'bg-emerald-50/40' : ''
                             } ${
                               status === 'Present'
-                                ? 'bg-emerald-100/90 text-emerald-800 font-black'
+                                ? (isMakeup ? 'bg-amber-100/90 text-amber-900 font-black' : 'bg-emerald-100/90 text-emerald-800 font-black')
                                 : status === 'Excused'
                                 ? 'bg-amber-100/90 text-amber-900 font-black'
                                 : status === 'Absent'
@@ -406,25 +453,46 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
                             }`}
                             title={`${st.name} — Ngày ${d.day}/${monthNum}: ${
                               status === 'Present'
-                                ? 'Có mặt (✓)'
+                                ? isMakeup
+                                  ? `Có mặt (Học bù tại ${info.facilityName || 'Cơ sở khác'})`
+                                  : 'Có mặt (✓)'
                                 : status === 'Excused'
-                                ? 'Nghỉ có phép (P)'
+                                ? isMakeup
+                                  ? `Nghỉ có phép (Học bù tại ${info.facilityName || 'Cơ sở khác'})`
+                                  : 'Nghỉ có phép (P)'
                                 : status === 'Absent'
-                                ? 'Vắng không phép (K)'
+                                ? isMakeup
+                                  ? `Vắng (Học bù tại ${info.facilityName || 'Cơ sở khác'})`
+                                  : 'Vắng không phép (K)'
                                 : isScheduled
                                 ? 'Lịch học'
                                 : 'Không có lịch'
-                            }`}
+                            }${info.note ? ` - Ghi chú: ${info.note}` : ''}`}
                           >
-                            <div className="flex items-center justify-center min-h-[24px]">
+                            <div className="flex flex-col items-center justify-center min-h-[24px]">
                               {status === 'Present' && (
-                                <span className="text-xs font-black text-emerald-700">✓</span>
+                                <div className="flex flex-col items-center leading-none">
+                                  <span className={`text-xs font-black ${isMakeup ? 'text-amber-800' : 'text-emerald-700'}`}>✓</span>
+                                  {isMakeup && (
+                                    <span className="text-[8px] font-extrabold text-amber-700 tracking-tighter">Bù</span>
+                                  )}
+                                </div>
                               )}
                               {status === 'Excused' && (
-                                <span className="text-xs font-black text-amber-800">P</span>
+                                <div className="flex flex-col items-center leading-none">
+                                  <span className="text-xs font-black text-amber-800">P</span>
+                                  {isMakeup && (
+                                    <span className="text-[8px] font-extrabold text-amber-700 tracking-tighter">Bù</span>
+                                  )}
+                                </div>
                               )}
                               {status === 'Absent' && (
-                                <span className="text-xs font-black text-rose-700">K</span>
+                                <div className="flex flex-col items-center leading-none">
+                                  <span className="text-xs font-black text-rose-700">K</span>
+                                  {isMakeup && (
+                                    <span className="text-[8px] font-extrabold text-rose-700 tracking-tighter">Bù</span>
+                                  )}
+                                </div>
                               )}
                               {status === 'Scheduled' && (
                                 <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] shadow-2xs"></span>
@@ -464,6 +532,12 @@ export const MonthlyAttendanceMatrix: React.FC = () => {
                 ✓
               </span>
               <span>Có mặt (Present)</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-black flex items-center justify-center text-[10px]">
+                ✓ Bù
+              </span>
+              <span>Học bù cơ sở khác</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-5 h-5 rounded bg-amber-100 text-amber-900 font-black flex items-center justify-center text-[11px]">

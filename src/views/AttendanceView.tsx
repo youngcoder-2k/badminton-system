@@ -418,8 +418,10 @@ export const AttendanceView: React.FC = () => {
   }, [facilitySessions, facilityClasses, coaches, selectedDayOfWeek, selectedFacilityId, selectedDate, selectedShiftId, sessions, isCoach, currentUser, facilityDailyClasses]);
 
   const classStudents = students.filter(student => {
-    // 0. Tuyệt đối không bao gồm học viên đã có trong danh sách học bù của ca học này
-    const isMakeupInThisShift =
+    // 0. Tự động loại bỏ học viên nếu:
+    // a) Đã có trong danh sách học bù của ca học hiện tại này (tránh hiển thị trùng lặp cả ở danh sách chính và danh sách học bù)
+    // b) Hoặc học viên đã được chuyển sang học bù tại CƠ SỞ KHÁC hoặc CA HỌC KHÁC vào ngày hôm đó (selectedDate).
+    const isAttendingMakeupToday =
       sessionMakeupStudents.some(
         m =>
           (m.studentId || (m as any).id) === student.id ||
@@ -428,8 +430,6 @@ export const AttendanceView: React.FC = () => {
       sessions.some(
         s =>
           s.date === selectedDate &&
-          (s.facilityId === selectedFacilityId || facilityClassIds.includes(s.classId)) &&
-          (!s.shiftId || s.shiftId === selectedShiftId) &&
           (
             s.makeupStudents?.some(
               m =>
@@ -445,7 +445,7 @@ export const AttendanceView: React.FC = () => {
           )
       );
 
-    if (isMakeupInThisShift) {
+    if (isAttendingMakeupToday) {
       return false;
     }
 
@@ -738,14 +738,19 @@ export const AttendanceView: React.FC = () => {
     }));
 
     // 2. Lưu điểm danh học viên học bù
-    const makeupRecords = sessionMakeupStudents.map(m => ({
-      studentId: m.studentId,
-      studentName: m.studentName,
-      status: attendanceMap[m.studentId] || m.status || 'Present',
-      isMakeup: true,
-      makeupFromClass: m.makeupFromClass,
-      note: notesMap[m.studentId] || m.note || 'Học bù'
-    }));
+    const makeupRecords = sessionMakeupStudents.map(m => {
+      const originalStudent = students.find(s => s.id === (m.studentId || (m as any).id));
+      return {
+        studentId: m.studentId || (m as any).id,
+        studentName: m.studentName || originalStudent?.name || 'Học viên',
+        studentAvatar: m.studentAvatar || originalStudent?.avatar,
+        studentPhone: m.studentPhone || originalStudent?.phone,
+        status: attendanceMap[m.studentId || (m as any).id] || m.status || 'Present',
+        isMakeup: true,
+        makeupFromClass: m.makeupFromClass || originalStudent?.className,
+        note: notesMap[m.studentId || (m as any).id] || m.note || 'Học bù tại cơ sở'
+      };
+    });
 
     // 3. Danh sách HLV cần duyệt (dành cho Admin & Quản lý sân)
     const coachRecordsToSave = canManageCoachAttendance
@@ -1053,17 +1058,6 @@ export const AttendanceView: React.FC = () => {
           </div>
           <span className="font-semibold leading-relaxed flex-1">
             <strong>Chế độ chỉ xem:</strong> Ca học này đã được xác nhận điểm danh{targetSession?.attendedAt ? ` lúc ${targetSession.attendedAt}` : ''}. Huấn luyện viên và Quản lý cơ sở không có quyền chỉnh sửa. Chỉ Admin mới có quyền cập nhật lại điểm danh.
-          </span>
-        </div>
-      )}
-
-      {!isAttendedLocked && !isAdmin && !isSelectedDateToday && !isSelectedDateFuture && (
-        <div className="py-2.5 px-4 bg-amber-50/95 border border-amber-200 rounded-2xl flex items-center gap-2.5 text-xs text-amber-950 shadow-2xs animate-in fade-in">
-          <div className="w-5 h-5 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
-            <Lock className="w-3.5 h-3.5" />
-          </div>
-          <span className="font-semibold leading-relaxed flex-1">
-            <strong>Chế độ chỉ xem:</strong> Bạn chỉ có thể thực hiện điểm danh cho các ca học diễn ra trong ngày hôm nay.
           </span>
         </div>
       )}
@@ -1486,12 +1480,6 @@ export const AttendanceView: React.FC = () => {
               <span className="text-[10px] font-extrabold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 normal-case tracking-normal flex items-center gap-1">
                 <Lock className="w-3 h-3 text-amber-600" />
                 Đã điểm danh (Chỉ Admin mới có quyền sửa)
-              </span>
-            )}
-            {!isSelectedDateFuture && !isAttendedLocked && !isAdmin && !isSelectedDateToday && (
-              <span className="text-[10px] font-extrabold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 normal-case tracking-normal flex items-center gap-1">
-                <Lock className="w-3 h-3 text-amber-600" />
-                Chỉ được điểm danh hôm nay
               </span>
             )}
           </h2>

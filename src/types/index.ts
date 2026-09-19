@@ -11,6 +11,8 @@ export interface UserProfile {
   phone: string;
   avatar: string;
   title: string;
+  googleLinked?: boolean;
+  googleEmail?: string;
 }
 
 export type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
@@ -96,10 +98,16 @@ export interface StudentAttendanceHistoryItem {
   date: string;
   status: AttendanceState;
   className?: string;
+  facilityId?: string;
   facilityName?: string;
   courtName?: string;
   timeSlot?: string;
+  shiftId?: string;
+  shiftName?: string;
+  coachName?: string;
   isMakeup?: boolean; // Học bù
+  makeupFromClass?: string;
+  makeupFromFacility?: string;
   isLeaveExcused?: boolean; // Nghỉ có phép
   note?: string;
 }

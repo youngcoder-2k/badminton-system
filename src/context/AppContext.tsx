@@ -47,6 +47,10 @@ export interface ToastItem {
 interface AppContextType {
   currentUser: UserProfile;
   currentRole: UserRole;
+  systemUsers: UserProfile[];
+  loginByEmail: (email: string) => { success: boolean; message: string; user?: UserProfile };
+  loginWithGoogle: (googleUser?: { name?: string; email?: string; avatar?: string }) => { success: boolean; message: string; user?: UserProfile };
+  updateUserProfile: (updates: Partial<UserProfile>) => void;
   switchUser: (userId: string) => void;
   switchRole: (role: UserRole, coachId?: string) => void;
   activeTab: string;
@@ -289,10 +293,68 @@ interface AppContextType {
   isHoliday: (dateStr: string, facilityId?: string) => CenterHoliday | undefined;
 }
 
+const getInitialSystemUsers = (): UserProfile[] => {
+  let baseUsers: UserProfile[] = [...INITIAL_USERS];
+  try {
+    const saved = localStorage.getItem('badminton_system_users_v2');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        baseUsers = parsed;
+      }
+    }
+  } catch {}
+
+  // Đảm bảo các HLV từ INITIAL_COACHES đều có tài khoản UserProfile nếu chưa tồn tại
+  INITIAL_COACHES.forEach(coach => {
+    const exists = baseUsers.some(
+      u => (u.coachId && u.coachId === coach.id) || (u.email && u.email.toLowerCase() === coach.email.toLowerCase())
+    );
+    if (!exists) {
+      baseUsers.push({
+        id: `user_${coach.id.toLowerCase()}`,
+        name: coach.name,
+        role: 'COACH',
+        coachId: coach.id,
+        email: coach.email.toLowerCase(),
+        phone: coach.phone,
+        avatar: coach.avatar,
+        title: `HLV ${coach.name} (${coach.specialty || 'Kỹ thuật'})`
+      });
+    }
+  });
+
+  return baseUsers;
+};
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<UserProfile>(INITIAL_USERS[0]);
+  const [systemUsers, setSystemUsers] = useState<UserProfile[]>(getInitialSystemUsers);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('badminton_system_users_v2', JSON.stringify(systemUsers));
+    } catch {}
+  }, [systemUsers]);
+
+  const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
+    const users = getInitialSystemUsers();
+    try {
+      const savedEmail = localStorage.getItem('badminton_current_user_email');
+      if (savedEmail) {
+        const found = users.find(u => u.email.toLowerCase() === savedEmail.toLowerCase());
+        if (found) return found;
+      }
+    } catch {}
+    return users[0] || INITIAL_USERS[0];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('badminton_current_user_email', currentUser.email);
+    } catch {}
+  }, [currentUser]);
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [classDetailSource, setClassDetailSource] = useState<string | null>(null);
@@ -483,8 +545,145 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const loginByEmail = (rawEmail: string): { success: boolean; message: string; user?: UserProfile } => {
+    const cleanEmail = rawEmail.trim().toLowerCase();
+    if (!cleanEmail) {
+      showToast('Vui lòng nhập địa chỉ email để đăng nhập!', 'warning');
+      return { success: false, message: 'Vui lòng nhập địa chỉ email!' };
+    }
+
+    // 1. Tìm trong systemUsers
+    let foundUser = systemUsers.find(u => u.email?.toLowerCase().trim() === cleanEmail);
+
+    // 2. Nếu chưa có trong systemUsers, kiểm tra danh sách coaches
+    if (!foundUser) {
+      const foundCoach = coaches.find(c => c.email?.toLowerCase().trim() === cleanEmail);
+      if (foundCoach) {
+        foundUser = {
+          id: `user_${foundCoach.id.toLowerCase()}`,
+          name: foundCoach.name,
+          role: 'COACH',
+          coachId: foundCoach.id,
+          email: foundCoach.email.toLowerCase().trim(),
+          phone: foundCoach.phone,
+          avatar: foundCoach.avatar,
+          title: `HLV ${foundCoach.name} (${foundCoach.specialty || 'Kỹ thuật'})`
+        };
+        setSystemUsers(prev => {
+          const filtered = prev.filter(u => u.id !== foundUser!.id && u.email.toLowerCase() !== foundUser!.email.toLowerCase());
+          return [...filtered, foundUser!];
+        });
+      }
+    }
+
+    if (!foundUser) {
+      showToast(`Không tìm thấy tài khoản với email: "${rawEmail}"!`, 'error');
+      return { success: false, message: `Không tìm thấy tài khoản với email: ${rawEmail}` };
+    }
+
+    setAttendanceTarget(null);
+    setCurrentUser(foundUser);
+    const roleLabel =
+      foundUser.role === 'ADMIN'
+        ? 'Admin Tổng'
+        : foundUser.role === 'FACILITY_MANAGER'
+        ? `Quản lý ${foundUser.facilityName || 'Cơ sở'}`
+        : 'Huấn luyện viên';
+    showToast(`Đăng nhập thành công: ${foundUser.name} (${roleLabel})`, 'success');
+
+    if (foundUser.role === 'COACH') {
+      const coachNotifs = notifications.filter(
+        n => !n.read && n.targetRole === 'COACH' && (!n.targetCoachId || n.targetCoachId === foundUser.coachId)
+      );
+      if (coachNotifs.length > 0) {
+        setTimeout(() => {
+          showToast(`🔔 HLV ${foundUser.name}: Bạn có ${coachNotifs.length} lời nhắc nhở mới từ Ban Quản Lý cho ca dạy hôm nay!`, 'warning');
+        }, 400);
+      }
+    }
+
+    return { success: true, message: 'Đăng nhập thành công', user: foundUser };
+  };
+
+  const loginWithGoogle = (googleUser?: { name?: string; email?: string; avatar?: string }): { success: boolean; message: string; user?: UserProfile } => {
+    const emailToUse = (googleUser?.email || currentUser.email || 'user.google@smashzone.vn').toLowerCase().trim();
+    const nameToUse = googleUser?.name || currentUser.name;
+    const avatarToUse = googleUser?.avatar || currentUser.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
+
+    let targetUser = systemUsers.find(u => u.email?.toLowerCase().trim() === emailToUse || u.googleEmail?.toLowerCase().trim() === emailToUse);
+    if (!targetUser) {
+      targetUser = {
+        id: currentUser.id || `user_google_${Date.now()}`,
+        name: nameToUse,
+        email: emailToUse,
+        phone: currentUser.phone || '0988 888 999',
+        avatar: avatarToUse,
+        role: currentUser.role || 'COACH',
+        coachId: currentUser.coachId,
+        facilityId: currentUser.facilityId,
+        facilityName: currentUser.facilityName,
+        title: currentUser.title || `${nameToUse} (Tài khoản Google)`,
+        googleLinked: true,
+        googleEmail: emailToUse
+      };
+      setSystemUsers(prev => [...prev.filter(u => u.id !== targetUser!.id), targetUser!]);
+    } else {
+      targetUser = {
+        ...targetUser,
+        googleLinked: true,
+        googleEmail: emailToUse,
+        avatar: avatarToUse || targetUser.avatar
+      };
+      setSystemUsers(prev => prev.map(u => (u.id === targetUser!.id ? targetUser! : u)));
+    }
+
+    setAttendanceTarget(null);
+    setCurrentUser(targetUser);
+    try {
+      localStorage.setItem('badminton_current_user_email', targetUser.email);
+    } catch {}
+    showToast(`Đã đăng nhập và liên kết tài khoản Google: ${emailToUse}`, 'success');
+    return { success: true, message: 'Đăng nhập Google thành công', user: targetUser };
+  };
+
+  const updateUserProfile = (updates: Partial<UserProfile>) => {
+    setCurrentUser(prev => {
+      const updated = { ...prev, ...updates };
+      try {
+        if (updated.email) {
+          localStorage.setItem('badminton_current_user_email', updated.email);
+        }
+      } catch {}
+      return updated;
+    });
+
+    setSystemUsers(prev =>
+      prev.map(u => (u.id === currentUser.id ? { ...u, ...updates } : u))
+    );
+
+    // Đồng bộ sang bảng Huấn Luyện Viên nếu user này là Coach
+    if (currentUser.coachId) {
+      setCoaches(prev =>
+        prev.map(c => {
+          if (c.id === currentUser.coachId) {
+            return {
+              ...c,
+              name: updates.name || c.name,
+              phone: updates.phone || c.phone,
+              email: updates.email ? updates.email.toLowerCase().trim() : c.email,
+              avatar: updates.avatar || c.avatar
+            };
+          }
+          return c;
+        })
+      );
+    }
+
+    showToast('Đã lưu thông tin cá nhân thành công!', 'success');
+  };
+
   const switchUser = (userId: string) => {
-    const target = INITIAL_USERS.find(u => u.id === userId);
+    const target = systemUsers.find(u => u.id === userId) || INITIAL_USERS.find(u => u.id === userId);
     if (target) {
       setAttendanceTarget(null); // Dọn sạch target điểm danh cũ khi đổi user
       setCurrentUser(target);
@@ -512,14 +711,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const switchRole = (role: UserRole, coachId?: string) => {
     setAttendanceTarget(null); // Dọn sạch target điểm danh cũ khi đổi role
     if (role === 'ADMIN') {
-      setCurrentUser(INITIAL_USERS[0]);
+      const adminUser = systemUsers.find(u => u.role === 'ADMIN') || INITIAL_USERS[0];
+      setCurrentUser(adminUser);
       showToast('Đã chuyển sang vai trò: Ban Quản Trị (ADMIN)', 'info');
     } else if (role === 'FACILITY_MANAGER') {
-      const targetManager = INITIAL_USERS.find(u => u.role === 'FACILITY_MANAGER') || INITIAL_USERS[1];
+      const targetManager = systemUsers.find(u => u.role === 'FACILITY_MANAGER') || INITIAL_USERS[1];
       setCurrentUser(targetManager);
       showToast(`Đã chuyển sang vai trò: ${targetManager.name} (${targetManager.title})`, 'info');
     } else {
-      const targetCoachUser = INITIAL_USERS.find(u => u.coachId === coachId) || INITIAL_USERS.find(u => u.role === 'COACH') || INITIAL_USERS[2];
+      const targetCoachUser = systemUsers.find(u => u.coachId === coachId) || systemUsers.find(u => u.role === 'COACH') || INITIAL_USERS[2];
       setCurrentUser(targetCoachUser);
       showToast(`Đã chuyển sang vai trò: HLV ${targetCoachUser.name}`, 'info');
     }
@@ -2289,8 +2489,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       note
     };
 
+    const targetDate = sessionMeta?.date || dateToCheck || '2026-08-28';
+
     setSessions(prev => {
-      const existing = prev.find(
+      // 1. Tự động loại bỏ học viên khỏi các ca học khác trong cùng ngày (đặc biệt là lớp cố định tại cơ sở ban đầu)
+      const cleaned = prev.map(s => {
+        const isTarget =
+          s.id === sessionId ||
+          (sessionMeta &&
+            s.date === sessionMeta.date &&
+            s.facilityId === sessionMeta.facilityId &&
+            s.shiftId === sessionMeta.shiftId);
+        if (isTarget) return s;
+
+        if (s.date === targetDate) {
+          const hasStudentInRecords = s.attendanceRecords?.some(
+            r => (r.studentId || (r as any).id) === student.id
+          );
+          const hasStudentInMakeup = s.makeupStudents?.some(
+            m => (m.studentId || (m as any).id) === student.id
+          );
+          if (hasStudentInRecords || hasStudentInMakeup) {
+            return {
+              ...s,
+              attendanceRecords: s.attendanceRecords?.filter(
+                r => (r.studentId || (r as any).id) !== student.id
+              ),
+              makeupStudents: s.makeupStudents?.filter(
+                m => (m.studentId || (m as any).id) !== student.id
+              ),
+              totalStudents: Math.max(0, s.totalStudents - (hasStudentInRecords || hasStudentInMakeup ? 1 : 0))
+            };
+          }
+        }
+        return s;
+      });
+
+      // 2. Tìm hoặc thêm vào ca học mục tiêu
+      const existing = cleaned.find(
         s =>
           s.id === sessionId ||
           (sessionMeta &&
@@ -2307,7 +2543,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           facilityId: sessionMeta?.facilityId || 'CS01',
           facilityName: sessionMeta?.facilityName || 'Sân Cầu Lông Cầu Giấy',
           shiftId: sessionMeta?.shiftId || 'CA01',
-          date: sessionMeta?.date || new Date().toISOString().split('T')[0],
+          date: targetDate,
           dayOfWeek: 'Hôm nay',
           startTime: sessionMeta?.timeSlot?.split(' - ')[0] || '18:00',
           endTime: sessionMeta?.timeSlot?.split(' - ')[1] || '19:30',
@@ -2321,9 +2557,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           totalStudents: 1,
           makeupStudents: [makeupItem]
         };
-        return [newSession, ...prev];
+        return [newSession, ...cleaned];
       }
-      return prev.map(s => {
+      return cleaned.map(s => {
         if (
           s.id === existing.id ||
           s.id === sessionId ||
@@ -2347,7 +2583,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     if (!suppressToast) {
-      showToast(`Đã thêm học viên ${student.name} vào danh sách học bù ca hôm nay!`, 'success');
+      showToast(`Đã thêm học viên ${student.name} vào danh sách học bù ca hôm nay (tự động loại khỏi lớp cố định ngày này)!`, 'success');
     }
   };
 
@@ -2490,7 +2726,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     });
 
-    // Update Students Session Counters & Leave calculations
+    // Update Students Session Counters & Leave calculations & Attendance History
+    const targetSessionObj = sessions.find(s => s.id === sessionId || (s.classId === classId && s.date === date));
+    const targetClassObj = classes.find(c => c.id === classId);
+    const effectiveFacilityId = targetSessionObj?.facilityId || targetClassObj?.facilityId || currentUser.facilityId || 'CS01';
+    const effectiveFacility = facilities.find(f => f.id === effectiveFacilityId);
+    const effectiveFacilityName = targetSessionObj?.facilityName || effectiveFacility?.name || currentUser.facilityName || 'Sân Cầu Lông';
+    const effectiveShiftObj = shifts.find(s => s.id === (targetSessionObj?.shiftId || targetClassObj?.shiftId));
+    const effectiveShiftName = effectiveShiftObj?.name || targetSessionObj?.shiftName || 'Ca học';
+    const effectiveTimeSlot = effectiveShiftObj ? `${effectiveShiftObj.startTime} — ${effectiveShiftObj.endTime}` : (targetSessionObj?.timeSlot || targetClassObj?.timeSlot || '18:00 — 19:30');
+    const effectiveCourt = targetSessionObj?.court || targetClassObj?.court || 'Sân 01';
+    const effectiveCoachName = targetSessionObj?.coachName || targetClassObj?.coachName || 'Huấn luyện viên';
+
     setStudents(prev =>
       prev.map(student => {
         const studentRecord = sanitizedRecords.find(r => r.studentId === student.id);
@@ -2498,6 +2745,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const maxLeaves = student.allowedLeaves ?? Math.floor((student.packageSessions || 12) / 4);
         const currentUsed = student.usedLeaves || 0;
+        const isMakeup = Boolean(studentRecord.isMakeup);
+
+        const historyItem: StudentAttendanceHistoryItem = {
+          id: `ATT-${Date.now()}-${student.id}-${Math.random().toString(36).substring(2, 7)}`,
+          date: date,
+          status: studentRecord.status,
+          className: isMakeup
+            ? (targetClassObj?.name || targetSessionObj?.className || 'Lớp học bù')
+            : (targetClassObj?.name || student.className || 'Lớp Cầu Lông'),
+          facilityId: effectiveFacilityId,
+          facilityName: effectiveFacilityName,
+          courtName: effectiveCourt,
+          timeSlot: effectiveTimeSlot,
+          shiftId: effectiveShiftObj?.id,
+          shiftName: effectiveShiftName,
+          coachName: effectiveCoachName,
+          isMakeup: isMakeup,
+          makeupFromClass: studentRecord.makeupFromClass || student.className,
+          makeupFromFacility: student.facilityName,
+          isLeaveExcused: studentRecord.status === 'Excused',
+          note: isMakeup
+            ? `Học bù tại ${effectiveFacilityName}${studentRecord.note ? ` (${studentRecord.note})` : ''}`
+            : studentRecord.note
+        };
+
+        const prevHistory = (student.attendanceHistory || []).filter(
+          h => !(h.date === date && (h.shiftId === effectiveShiftObj?.id || h.facilityId === effectiveFacilityId))
+        );
+        const updatedHistory = [historyItem, ...prevHistory];
 
         if (studentRecord.status === 'Present') {
           const newAttended = student.attendedSessions + 1;
@@ -2508,7 +2784,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             attendedSessions: newAttended,
             remainingSessions: newRemaining,
             status: newStatus,
-            lastAttended: date
+            lastAttended: date,
+            attendanceHistory: updatedHistory,
+            note: isMakeup
+              ? (student.note
+                  ? `${student.note} | [Học bù ${date}] Có mặt tại ${effectiveFacilityName} (${effectiveShiftName})`
+                  : `[Học bù ${date}] Có mặt tại ${effectiveFacilityName} (${effectiveShiftName})`)
+              : student.note
           };
         } else if (studentRecord.status === 'Excused') {
           // Rule: 4 sessions = 1 leave.
@@ -2517,10 +2799,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return {
               ...student,
               usedLeaves: currentUsed + 1,
-              // Buổi phép được bảo lưu, không bị trừ mất!
+              attendanceHistory: updatedHistory,
               note: student.note
-                ? `${student.note} | Nghỉ có phép ngày ${date}`
-                : `Nghỉ có phép ngày ${date}`
+                ? `${student.note} | Nghỉ có phép ngày ${date}${isMakeup ? ` (tại ${effectiveFacilityName})` : ''}`
+                : `Nghỉ có phép ngày ${date}${isMakeup ? ` (tại ${effectiveFacilityName})` : ''}`
             };
           } else {
             // Exceeded leave allowance -> counts as absent, session deducted
@@ -2529,9 +2811,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               ...student,
               remainingSessions: newRemaining,
               status: newRemaining === 0 ? 'Expired' : student.status,
+              attendanceHistory: updatedHistory,
               note: student.note
-                ? `${student.note} | Vắng (hết phép tháng) ngày ${date}`
-                : `Vắng (hết phép) ngày ${date}`
+                ? `${student.note} | Vắng (hết phép tháng) ngày ${date}${isMakeup ? ` (tại ${effectiveFacilityName})` : ''}`
+                : `Vắng (hết phép) ngày ${date}${isMakeup ? ` (tại ${effectiveFacilityName})` : ''}`
             };
           }
         } else if (studentRecord.status === 'Absent') {
@@ -2540,7 +2823,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return {
             ...student,
             remainingSessions: newRemaining,
-            status: newRemaining === 0 ? 'Expired' : student.status
+            status: newRemaining === 0 ? 'Expired' : student.status,
+            attendanceHistory: updatedHistory,
+            note: isMakeup
+              ? (student.note
+                  ? `${student.note} | [Học bù ${date}] Vắng tại ${effectiveFacilityName} (${effectiveShiftName})`
+                  : `[Học bù ${date}] Vắng tại ${effectiveFacilityName} (${effectiveShiftName})`)
+              : student.note
           };
         }
 
@@ -2805,7 +3094,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return updatedSessions;
     });
 
-    // 3. Update Students Session Counters & Leave calculations
+    // 3. Update Students Session Counters, Leave calculations & Attendance History (Đồng bộ data tổng để đối soát)
+    const targetSessionObj = sessions.find(s => s.id === sessionId || (s.classId === classId && s.date === date && (!shiftId || s.shiftId === shiftId)));
+    const targetClassObj = classes.find(c => c.id === classId);
+    const effectiveFacilityId = targetSessionObj?.facilityId || targetClassObj?.facilityId || currentUser.facilityId || 'CS01';
+    const effectiveFacility = facilities.find(f => f.id === effectiveFacilityId);
+    const effectiveFacilityName = targetSessionObj?.facilityName || effectiveFacility?.name || currentUser.facilityName || 'Sân Cầu Lông';
+    const effectiveShiftObj = shifts.find(s => s.id === (shiftId || targetSessionObj?.shiftId || targetClassObj?.shiftId));
+    const effectiveShiftName = effectiveShiftObj?.name || targetSessionObj?.shiftName || 'Ca học';
+    const effectiveTimeSlot = effectiveShiftObj ? `${effectiveShiftObj.startTime} — ${effectiveShiftObj.endTime}` : (targetSessionObj?.timeSlot || targetClassObj?.timeSlot || '18:00 — 19:30');
+    const effectiveCourt = targetSessionObj?.court || targetClassObj?.court || 'Sân 01';
+    const effectiveCoachName = targetSessionObj?.coachName || targetClassObj?.coachName || coachRecords[0]?.coachName || 'Huấn luyện viên';
+
     setStudents(prev =>
       prev.map(student => {
         const studentRecord = sanitizedRecords.find(r => r.studentId === student.id);
@@ -2813,6 +3113,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const maxLeaves = student.allowedLeaves ?? Math.floor((student.packageSessions || 12) / 4);
         const currentUsed = student.usedLeaves || 0;
+        const isMakeup = Boolean(studentRecord.isMakeup);
+
+        const historyItem: StudentAttendanceHistoryItem = {
+          id: `ATT-${Date.now()}-${student.id}-${Math.random().toString(36).substring(2, 7)}`,
+          date: date,
+          status: studentRecord.status,
+          className: isMakeup
+            ? (targetClassObj?.name || targetSessionObj?.className || 'Lớp học bù')
+            : (targetClassObj?.name || student.className || 'Lớp Cầu Lông'),
+          facilityId: effectiveFacilityId,
+          facilityName: effectiveFacilityName,
+          courtName: effectiveCourt,
+          timeSlot: effectiveTimeSlot,
+          shiftId: effectiveShiftObj?.id || shiftId,
+          shiftName: effectiveShiftName,
+          coachName: effectiveCoachName,
+          isMakeup: isMakeup,
+          makeupFromClass: studentRecord.makeupFromClass || student.className,
+          makeupFromFacility: student.facilityName,
+          isLeaveExcused: studentRecord.status === 'Excused',
+          note: isMakeup
+            ? `Học bù tại ${effectiveFacilityName}${studentRecord.note ? ` (${studentRecord.note})` : ''}`
+            : studentRecord.note
+        };
+
+        const prevHistory = (student.attendanceHistory || []).filter(
+          h => !(h.date === date && (h.shiftId === (effectiveShiftObj?.id || shiftId) || h.facilityId === effectiveFacilityId))
+        );
+        const updatedHistory = [historyItem, ...prevHistory];
 
         if (studentRecord.status === 'Present') {
           const newAttended = student.attendedSessions + 1;
@@ -2823,16 +3152,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             attendedSessions: newAttended,
             remainingSessions: newRemaining,
             status: newStatus,
-            lastAttended: date
+            lastAttended: date,
+            attendanceHistory: updatedHistory,
+            note: isMakeup
+              ? (student.note
+                  ? `${student.note} | [Học bù ${date}] Có mặt tại ${effectiveFacilityName} (${effectiveShiftName})`
+                  : `[Học bù ${date}] Có mặt tại ${effectiveFacilityName} (${effectiveShiftName})`)
+              : student.note
           };
         } else if (studentRecord.status === 'Excused') {
           if (currentUsed < maxLeaves) {
             return {
               ...student,
               usedLeaves: currentUsed + 1,
+              attendanceHistory: updatedHistory,
               note: student.note
-                ? `${student.note} | Nghỉ có phép ngày ${date}`
-                : `Nghỉ có phép ngày ${date}`
+                ? `${student.note} | Nghỉ có phép ngày ${date}${isMakeup ? ` (tại ${effectiveFacilityName})` : ''}`
+                : `Nghỉ có phép ngày ${date}${isMakeup ? ` (tại ${effectiveFacilityName})` : ''}`
             };
           } else {
             const newRemaining = Math.max(0, student.remainingSessions - 1);
@@ -2840,9 +3176,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               ...student,
               remainingSessions: newRemaining,
               status: newRemaining === 0 ? 'Expired' : student.status,
+              attendanceHistory: updatedHistory,
               note: student.note
-                ? `${student.note} | Vắng (hết phép tháng) ngày ${date}`
-                : `Vắng (hết phép) ngày ${date}`
+                ? `${student.note} | Vắng (hết phép tháng) ngày ${date}${isMakeup ? ` (tại ${effectiveFacilityName})` : ''}`
+                : `Vắng (hết phép) ngày ${date}${isMakeup ? ` (tại ${effectiveFacilityName})` : ''}`
             };
           }
         } else if (studentRecord.status === 'Absent') {
@@ -2850,7 +3187,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return {
             ...student,
             remainingSessions: newRemaining,
-            status: newRemaining === 0 ? 'Expired' : student.status
+            status: newRemaining === 0 ? 'Expired' : student.status,
+            attendanceHistory: updatedHistory,
+            note: isMakeup
+              ? (student.note
+                  ? `${student.note} | [Học bù ${date}] Vắng tại ${effectiveFacilityName} (${effectiveShiftName})`
+                  : `[Học bù ${date}] Vắng tại ${effectiveFacilityName} (${effectiveShiftName})`)
+              : student.note
           };
         }
 
@@ -3506,13 +3849,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       totalStudents: 0
     };
     setCoaches(prev => [...prev, newCoach]);
-    showToast(`Đã thêm HLV mới: ${newCoach.name} (${newId})`, 'success');
+
+    // Tạo luôn UserProfile tương ứng để HLV có thể đăng nhập bằng email
+    const newCoachUser: UserProfile = {
+      id: `user_${newId.toLowerCase()}`,
+      name: newCoach.name,
+      role: 'COACH',
+      coachId: newId,
+      email: newCoach.email.toLowerCase().trim(),
+      phone: newCoach.phone,
+      avatar: newCoach.avatar,
+      title: `HLV ${newCoach.name} (${newCoach.specialty || 'Kỹ thuật'})`
+    };
+
+    setSystemUsers(prev => {
+      const filtered = prev.filter(
+        u => u.id !== newCoachUser.id && u.email.toLowerCase() !== newCoachUser.email.toLowerCase()
+      );
+      return [...filtered, newCoachUser];
+    });
+
+    showToast(`Đã thêm HLV mới: ${newCoach.name} (Email: ${newCoach.email})`, 'success');
   };
 
   const editCoach = (id: string, updates: Partial<Coach>) => {
     setCoaches(prev =>
       prev.map(c => (c.id === id ? { ...c, ...updates } : c))
     );
+    // Đồng bộ sang UserProfile nếu HLV đổi tên hoặc đổi email
+    setSystemUsers(prev =>
+      prev.map(u => {
+        if (u.coachId === id) {
+          return {
+            ...u,
+            name: updates.name || u.name,
+            email: updates.email ? updates.email.toLowerCase().trim() : u.email,
+            phone: updates.phone || u.phone,
+            avatar: updates.avatar || u.avatar
+          };
+        }
+        return u;
+      })
+    );
+    if (currentUser.coachId === id) {
+      setCurrentUser(prev => ({
+        ...prev,
+        name: updates.name || prev.name,
+        email: updates.email ? updates.email.toLowerCase().trim() : prev.email,
+        phone: updates.phone || prev.phone,
+        avatar: updates.avatar || prev.avatar
+      }));
+    }
     showToast('Đã cập nhật thông tin HLV!', 'success');
   };
 
@@ -3553,7 +3940,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       content.toLowerCase().includes('@tất cả') ||
       content.toLowerCase().includes('@mọi người');
 
-    const mentionedUsers = INITIAL_USERS.filter(u => {
+    const mentionedUsers = systemUsers.filter(u => {
       if (u.id === currentUser.id) return false;
       const cleanName = u.name.trim();
       return (
@@ -3563,7 +3950,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const targetUsersToNotify = isAllMentioned
-      ? INITIAL_USERS.filter(u => u.id !== currentUser.id)
+      ? systemUsers.filter(u => u.id !== currentUser.id)
       : mentionedUsers;
 
     const newMsg: ChatMessage = {
@@ -3660,6 +4047,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       value={{
         currentUser,
         currentRole: currentUser.role,
+        systemUsers,
+        loginByEmail,
+        loginWithGoogle,
+        updateUserProfile,
         switchUser,
         switchRole,
         activeTab,
