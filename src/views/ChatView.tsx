@@ -788,42 +788,8 @@ export const ChatView: React.FC = () => {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Composer / Coach React Guidance Area */}
-        {isCoach ? (
-          /* CHẾ ĐỘ HUẤN LUYỆN VIÊN: CHỈ REACT BIỂU CẢM, KHÔNG ĐƯỢC CHAT */
-          <div className="p-3.5 sm:p-4 bg-gradient-to-r from-amber-50/95 via-emerald-50/80 to-teal-50/95 border-t border-amber-200/90 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left animate-in fade-in">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
-                <Shield className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 justify-center sm:justify-start flex-wrap">
-                  <span className="text-xs font-extrabold text-[#0F172A] uppercase tracking-wide">
-                    Chế độ Huấn luyện viên: Chỉ xem & Thả biểu cảm (React)
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                    Không thể gửi tin nhắn
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-600 mt-0.5 max-w-xl leading-relaxed">
-                  HLV <strong>{currentUser.name}</strong> chỉ có quyền thả cảm xúc (react) trên từng tin nhắn để xác nhận đã nhận thông tin từ Ban Quản Trị & Quản lý cơ sở.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 bg-white/90 border border-amber-200 px-3 py-2 rounded-2xl shadow-xs">
-              <span className="text-[11px] font-bold text-slate-500 mr-1 hidden sm:inline">Phản hồi:</span>
-              <div className="flex items-center gap-1">
-                {QUICK_REACTIONS.slice(0, 5).map(qr => (
-                  <span key={qr.emoji} className="text-base select-none cursor-default" title={qr.label}>
-                    {qr.emoji}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* CHẾ ĐỘ ADMIN & QUẢN LÝ CƠ SỞ: SOẠN VÀ GỬI TIN NHẮN (TAG TÊN & TỰ ĐỘNG GỬI EMAIL) */
+        {/* Input Composer (Chỉ hiển thị cho Admin & Quản lý cơ sở; HLV chỉ xem và react) */}
+        {!isCoach && (
           <div className="p-3 sm:p-3.5 bg-white border-t border-slate-200 relative">
             {/* Autocomplete Popup Nhắc Tên Nhân Sự */}
             {isMentionOpen && filteredMentionUsers.length > 0 && (
