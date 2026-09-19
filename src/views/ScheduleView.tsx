@@ -247,6 +247,44 @@ export const ScheduleView: React.FC = () => {
     return { id: 'CA03', name: 'Ca 2', timeSlot: '19:30 - 21:00', startTime: '19:30' };
   };
 
+  // Helper xác định thứ tự ưu tiên của ca học: Ca sáng (1) -> Ca 1 (2) -> Ca 2 (3) -> Ca 3 (4) -> ...
+  const getShiftOrderRank = (session: SessionSchedule): number => {
+    const shiftInfo = getShiftInfo(session);
+    const name = (shiftInfo?.name || session.shiftName || '').toLowerCase().trim();
+    const id = (session.shiftId || shiftInfo?.id || '').toUpperCase();
+    const startTime = session.startTime || shiftInfo?.startTime || (session.timeSlot || '').split(' - ')[0] || '';
+
+    // 1. Ca sáng
+    if (name.includes('sáng') || id.includes('SANG') || id === 'CA01') return 1;
+    // 2. Ca 1
+    if (name.includes('ca 1') || name.includes('ca 01') || id === 'CA02' || id === 'CA1') return 2;
+    // 3. Ca 2
+    if (name.includes('ca 2') || name.includes('ca 02') || id === 'CA03' || id === 'CA2') return 3;
+    // 4. Ca 3
+    if (name.includes('ca 3') || name.includes('ca 03') || id === 'CA04' || id === 'CA3') return 4;
+
+    // Fallback: parse start time if available
+    if (startTime) {
+      const match = startTime.match(/(\d{1,2}):(\d{2})/);
+      if (match) {
+        return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+      }
+    }
+    return 999;
+  };
+
+  // Helper sắp xếp ca học: Thứ tự Ca sáng -> Ca 1 -> Ca 2, cùng ca thì xếp theo tên cơ sở
+  const sortSessionsByShift = (a: SessionSchedule, b: SessionSchedule): number => {
+    const rankA = getShiftOrderRank(a);
+    const rankB = getShiftOrderRank(b);
+    if (rankA !== rankB) {
+      return rankA - rankB;
+    }
+    const facA = getSessionFacilityName(a);
+    const facB = getSessionFacilityName(b);
+    return facA.localeCompare(facB, 'vi');
+  };
+
   // Helper lấy dynamic daily class ID: CLS_{facilityId}_{shiftId}_{date}
   const getDynamicClassId = (session: SessionSchedule) => {
     if (session.classId && session.classId.startsWith('CLS_')) {
@@ -326,9 +364,10 @@ export const ScheduleView: React.FC = () => {
     const result = Array.from(map.values());
 
     // Nếu là HLV, lọc triệt để chỉ giữ lại các ca HLV thực sự được phân công
+    let finalSessions = result;
     if (isCoach) {
       const coachId = currentUser.coachId || currentUser.id;
-      return result.filter(s => {
+      finalSessions = result.filter(s => {
         const dynamicClassId = getDynamicClassId(s);
         if (dynamicClassId in dailyCoachAssignments) {
           return (dailyCoachAssignments[dynamicClassId] || []).includes(coachId);
@@ -343,7 +382,13 @@ export const ScheduleView: React.FC = () => {
       });
     }
 
-    return result;
+    // Sắp xếp mặc định: Ngày học -> Ca sáng (1) -> Ca 1 (2) -> Ca 2 (3) -> Cơ sở
+    return finalSessions.sort((a, b) => {
+      if (a.date !== b.date) {
+        return a.date.localeCompare(b.date);
+      }
+      return sortSessionsByShift(a, b);
+    });
   }, [filteredSessions, facilities, classes, shifts, isCoach, currentUser, dailyCoachAssignments, coaches]);
 
   // Kiểm tra ca học đã diễn ra / đã điểm danh (quá khứ) hay chưa học (tương lai)
@@ -895,7 +940,9 @@ export const ScheduleView: React.FC = () => {
           <div className="overflow-x-auto no-scrollbar snap-x snap-mandatory">
             <div className="flex sm:grid sm:grid-cols-7 sm:min-w-[840px] divide-x divide-slate-100 min-h-[520px]">
               {weekDays.map(day => {
-                const daySessions = deduplicatedSessions.filter(s => s.date === day.date);
+                const daySessions = deduplicatedSessions
+                  .filter(s => s.date === day.date)
+                  .sort(sortSessionsByShift);
                 return (
                   <div
                     key={day.date}

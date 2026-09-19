@@ -329,9 +329,9 @@ export const ClassesView: React.FC = () => {
     return true;
   }, [selectedDate, sessions]);
 
-  // Filter daily classes
+  // Filter daily classes and sort by shift order: Ca sáng -> Ca 1 -> Ca 2
   const filteredClasses = useMemo(() => {
-    return dailyClasses.filter(cls => {
+    const list = dailyClasses.filter(cls => {
       const matchesSearch =
         !searchQuery.trim() ||
         cls.court.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -351,6 +351,30 @@ export const ClassesView: React.FC = () => {
         (cls.coachIds && cls.coachIds.includes(selectedCoachId));
 
       return matchesSearch && matchesShift && matchesCoach;
+    });
+
+    const getShiftOrderRank = (cls: BadmintonClass): number => {
+      const name = (cls.shiftName || '').toLowerCase().trim();
+      const id = (cls.shiftId || '').toUpperCase();
+      const timeSlot = cls.timeSlot || '';
+
+      if (name.includes('sáng') || id.includes('SANG') || id === 'CA01') return 1;
+      if (name.includes('ca 1') || name.includes('ca 01') || id === 'CA02' || id === 'CA1') return 2;
+      if (name.includes('ca 2') || name.includes('ca 02') || id === 'CA03' || id === 'CA2') return 3;
+      if (name.includes('ca 3') || name.includes('ca 03') || id === 'CA04' || id === 'CA3') return 4;
+
+      if (timeSlot) {
+        const match = timeSlot.match(/(\d{1,2}):(\d{2})/);
+        if (match) return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+      }
+      return 999;
+    };
+
+    return list.sort((a, b) => {
+      const rankA = getShiftOrderRank(a);
+      const rankB = getShiftOrderRank(b);
+      if (rankA !== rankB) return rankA - rankB;
+      return (a.court || a.facilityName || '').localeCompare(b.court || b.facilityName || '', 'vi');
     });
   }, [dailyClasses, searchQuery, selectedShiftId, selectedCoachId, students]);
 

@@ -1776,7 +1776,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     });
 
-    return generatedClasses;
+    const getShiftOrderRank = (cls: BadmintonClass): number => {
+      const name = (cls.shiftName || '').toLowerCase().trim();
+      const id = (cls.shiftId || '').toUpperCase();
+      const timeSlot = cls.timeSlot || '';
+
+      if (name.includes('sáng') || id.includes('SANG') || id === 'CA01') return 1;
+      if (name.includes('ca 1') || name.includes('ca 01') || id === 'CA02' || id === 'CA1') return 2;
+      if (name.includes('ca 2') || name.includes('ca 02') || id === 'CA03' || id === 'CA2') return 3;
+      if (name.includes('ca 3') || name.includes('ca 03') || id === 'CA04' || id === 'CA3') return 4;
+
+      if (timeSlot) {
+        const match = timeSlot.match(/(\d{1,2}):(\d{2})/);
+        if (match) return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+      }
+      return 999;
+    };
+
+    return generatedClasses.sort((a, b) => {
+      const rankA = getShiftOrderRank(a);
+      const rankB = getShiftOrderRank(b);
+      if (rankA !== rankB) return rankA - rankB;
+      return (a.facilityName || a.court || '').localeCompare(b.facilityName || b.court || '', 'vi');
+    });
   }, [facilities, shifts, students, coaches, dailyCoachAssignments, dailyStudentAssignments, dailyClassNotes, sessionUnitPrice, isFacilityManager, managedFacilityId, isCoach, currentUser, isHoliday]);
 
   const getClassById = useCallback((classId: string, dateStr?: string): BadmintonClass | undefined => {
